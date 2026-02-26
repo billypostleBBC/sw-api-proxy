@@ -21,6 +21,13 @@ const createToolSchema = z.object({
   projectId: z.number().int().positive(),
   mode: z.enum(["server", "browser", "both"])
 });
+const projectsQuerySchema = z.object({
+  slug: z.string().min(1).optional()
+});
+const toolsQuerySchema = z.object({
+  slug: z.string().min(1).optional(),
+  projectId: z.coerce.number().int().positive().optional()
+});
 
 async function requireAdmin(
   app: FastifyInstance,
@@ -223,6 +230,41 @@ export function registerAdminRoutes(
     });
 
     return reply.send({ ok: true });
+  });
+
+  app.get("/admin/projects", async (request, reply) => {
+    const actorEmail = await requireAdmin(app, request, deps.authService);
+    if (!actorEmail) {
+      return sendError(reply, 401, "unauthorized", "Admin session required");
+    }
+
+    const parsed = projectsQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return sendError(reply, 400, "bad_request", "Invalid query", { issues: parsed.error.issues });
+    }
+
+    const projects = await deps.repo.listProjects({
+      slug: parsed.data.slug
+    });
+    return reply.send({ projects });
+  });
+
+  app.get("/admin/tools", async (request, reply) => {
+    const actorEmail = await requireAdmin(app, request, deps.authService);
+    if (!actorEmail) {
+      return sendError(reply, 401, "unauthorized", "Admin session required");
+    }
+
+    const parsed = toolsQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return sendError(reply, 400, "bad_request", "Invalid query", { issues: parsed.error.issues });
+    }
+
+    const tools = await deps.repo.listTools({
+      slug: parsed.data.slug,
+      projectId: parsed.data.projectId
+    });
+    return reply.send({ tools });
   });
 
   app.get("/admin/usage", async (request, reply) => {

@@ -107,6 +107,9 @@ export function registerProxyRoutes(
     if (!auth) {
       return sendError(reply, 401, "unauthorized", "Missing or invalid bearer token");
     }
+    if (auth.projectStatus !== "active") {
+      return sendError(reply, 403, "forbidden", "Project is inactive");
+    }
 
     try {
       await deps.limitService.enforce(auth.projectId, auth.rpmCap, auth.dailyTokenCap);
@@ -157,6 +160,9 @@ export function registerProxyRoutes(
     const auth = await resolveProxyAuth(request, app.repo, app.ticketService);
     if (!auth) {
       return sendError(reply, 401, "unauthorized", "Missing or invalid bearer token");
+    }
+    if (auth.projectStatus !== "active") {
+      return sendError(reply, 403, "forbidden", "Project is inactive");
     }
 
     const key = await app.repo.getActiveProjectKey(auth.projectId);

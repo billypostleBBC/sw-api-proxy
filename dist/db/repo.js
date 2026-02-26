@@ -21,6 +21,29 @@ export class Repo {
         }
         return row;
     }
+    async listProjects(filter) {
+        const where = [];
+        const args = [];
+        if (filter.slug) {
+            args.push(filter.slug);
+            where.push(`slug = $${args.length}`);
+        }
+        const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+        const result = await this.pool.query(`SELECT id, slug, name, environment, status, owner_email, rpm_cap, daily_token_cap
+       FROM projects
+       ${whereSql}
+       ORDER BY id DESC`, args);
+        return result.rows.map((row) => ({
+            id: row.id,
+            slug: row.slug,
+            name: row.name,
+            environment: row.environment,
+            status: row.status,
+            ownerEmail: row.owner_email,
+            rpmCap: row.rpm_cap,
+            dailyTokenCap: Number(row.daily_token_cap)
+        }));
+    }
     async setActiveProjectKey(input) {
         const admin = await this.pool.query(`SELECT id FROM admins WHERE email = $1 AND status = 'active'`, [input.adminEmail]);
         const adminId = admin.rows[0]?.id ?? null;
@@ -39,6 +62,30 @@ export class Repo {
             throw new Error("Failed to create tool");
         }
         return row;
+    }
+    async listTools(filter) {
+        const where = [];
+        const args = [];
+        if (filter.slug) {
+            args.push(filter.slug);
+            where.push(`slug = $${args.length}`);
+        }
+        if (filter.projectId) {
+            args.push(filter.projectId);
+            where.push(`project_id = $${args.length}`);
+        }
+        const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+        const result = await this.pool.query(`SELECT id, slug, project_id, mode, status
+       FROM tools
+       ${whereSql}
+       ORDER BY id DESC`, args);
+        return result.rows.map((row) => ({
+            id: row.id,
+            slug: row.slug,
+            projectId: row.project_id,
+            mode: row.mode,
+            status: row.status
+        }));
     }
     async createToolToken(input) {
         await this.pool.query(`INSERT INTO tool_tokens (id, tool_id, token_hash, expires_at, status)

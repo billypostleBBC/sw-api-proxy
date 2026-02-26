@@ -16,6 +16,25 @@ type ToolTokenRow = {
   daily_token_cap: number;
 };
 
+type ProjectRow = {
+  id: number;
+  slug: string;
+  name: string;
+  environment: string;
+  status: string;
+  owner_email: string;
+  rpm_cap: number;
+  daily_token_cap: string;
+};
+
+type ToolRow = {
+  id: number;
+  slug: string;
+  project_id: number;
+  mode: string;
+  status: string;
+};
+
 export class Repo {
   constructor(private readonly pool: pg.Pool) {}
 
@@ -49,6 +68,46 @@ export class Repo {
       throw new Error("Failed to create project");
     }
     return row;
+  }
+
+  async listProjects(filter: { slug?: string }): Promise<
+    Array<{
+      id: number;
+      slug: string;
+      name: string;
+      environment: string;
+      status: string;
+      ownerEmail: string;
+      rpmCap: number;
+      dailyTokenCap: number;
+    }>
+  > {
+    const where: string[] = [];
+    const args: Array<string> = [];
+    if (filter.slug) {
+      args.push(filter.slug);
+      where.push(`slug = $${args.length}`);
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const result = await this.pool.query<ProjectRow>(
+      `SELECT id, slug, name, environment, status, owner_email, rpm_cap, daily_token_cap
+       FROM projects
+       ${whereSql}
+       ORDER BY id DESC`,
+      args
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      slug: row.slug,
+      name: row.name,
+      environment: row.environment,
+      status: row.status,
+      ownerEmail: row.owner_email,
+      rpmCap: row.rpm_cap,
+      dailyTokenCap: Number(row.daily_token_cap)
+    }));
   }
 
   async setActiveProjectKey(input: {
@@ -87,6 +146,44 @@ export class Repo {
       throw new Error("Failed to create tool");
     }
     return row;
+  }
+
+  async listTools(filter: { slug?: string; projectId?: number }): Promise<
+    Array<{
+      id: number;
+      slug: string;
+      projectId: number;
+      mode: string;
+      status: string;
+    }>
+  > {
+    const where: string[] = [];
+    const args: Array<string | number> = [];
+    if (filter.slug) {
+      args.push(filter.slug);
+      where.push(`slug = $${args.length}`);
+    }
+    if (filter.projectId) {
+      args.push(filter.projectId);
+      where.push(`project_id = $${args.length}`);
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const result = await this.pool.query<ToolRow>(
+      `SELECT id, slug, project_id, mode, status
+       FROM tools
+       ${whereSql}
+       ORDER BY id DESC`,
+      args
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      slug: row.slug,
+      projectId: row.project_id,
+      mode: row.mode,
+      status: row.status
+    }));
   }
 
   async createToolToken(input: {

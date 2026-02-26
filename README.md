@@ -28,6 +28,9 @@ On startup, DB migrations run automatically.
 - Build: `npm run build`
 - Tests: `npm test`
 
+## How to use
+- Step-by-step setup and integration guide: `docs/how-to-use.md`
+
 ## Core endpoints
 ### Admin auth
 - `POST /admin/auth/magic-link/request`
