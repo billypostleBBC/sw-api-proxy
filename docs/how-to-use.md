@@ -4,6 +4,13 @@ This guide covers two tasks:
 1. Add or rotate an OpenAI API key for a project.
 2. Point tools at this proxy so tools never handle raw OpenAI keys.
 
+## Focused runbooks
+
+Use these when you need a narrower operational guide:
+1. Repeatable template for onboarding any tool: `tool-onboarding-template.md`
+2. Alt-text Generator migration runbook: `alt-text-generator-onboarding.md`
+3. Key provisioning + rotation SOP: `proxy-key-provisioning.md`
+
 ## Prerequisites
 
 1. Proxy is running and reachable over HTTPS (required for session cookies).
