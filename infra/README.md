@@ -4,7 +4,6 @@
 - VPC with private subnets for ECS and RDS.
 - RDS PostgreSQL with encryption + backups enabled.
 - KMS key for API key encryption/decryption.
-- SES identity/domain verification for sending magic links.
 - ECS Fargate service behind ALB + ACM TLS cert.
 - SSM Parameter Store entries for runtime secrets.
 - CloudWatch log group `/ecs/proxy-api`.
@@ -17,10 +16,9 @@
 5. Set security groups:
    - ALB inbound 443 from corp network.
    - ECS inbound from ALB only.
-   - ECS outbound to RDS/KMS/SES/SSM.
+   - ECS outbound to RDS/KMS/SSM.
 6. Run smoke test against `/health` and admin auth endpoints.
 
 ## IAM task role permissions
 - `kms:Decrypt`, `kms:Encrypt` on KMS key.
-- `ses:SendEmail` on SES identity.
 - `ssm:GetParameter`, `ssm:GetParameters` on app parameters.

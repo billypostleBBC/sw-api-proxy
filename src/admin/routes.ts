@@ -1,12 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { sendError } from "../utils/http.js";
+import { safeEqualHex, sha256 } from "../utils/crypto.js";
 import { AuthService } from "../auth/service.js";
 import type { Repo } from "../db/repo.js";
 import { UsageService } from "../usage/service.js";
 
-const requestMagicLinkSchema = z.object({ email: z.string().email() });
-const verifyMagicLinkSchema = z.object({ token: z.string().min(10) });
+const adminLoginSchema = z.object({ password: z.string().min(1) });
 const createProjectSchema = z.object({
   slug: z.string().min(1),
   name: z.string().min(1),
@@ -30,7 +30,6 @@ const toolsQuerySchema = z.object({
 });
 
 async function requireAdmin(
-  app: FastifyInstance,
   request: Parameters<FastifyInstance["route"]>[0]["handler"] extends (
     req: infer Req,
     ...args: never[]
@@ -47,7 +46,7 @@ async function requireAdmin(
   if (!email) {
     return null;
   }
-  return app.env.adminEmailAllowlist.has(email.toLowerCase()) ? email : null;
+  return email === "admin" ? email : null;
 }
 
 export function registerAdminRoutes(
@@ -56,45 +55,30 @@ export function registerAdminRoutes(
     authService: AuthService;
     repo: Repo;
     usageService: UsageService;
-    appBaseUrl: string;
   }
 ): void {
-  app.post("/admin/auth/magic-link/request", async (request, reply) => {
-    const parsed = requestMagicLinkSchema.safeParse(request.body);
+  app.post("/admin/auth/login", async (request, reply) => {
+    const parsed = adminLoginSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.code(204).send();
+      return sendError(reply, 400, "bad_request", "Invalid password input");
     }
 
-    const email = parsed.data.email.toLowerCase();
-    if (!app.env.adminEmailAllowlist.has(email)) {
-      return reply.code(204).send();
+    const storedHash = await deps.repo.getAdminPasswordHash("admin");
+    if (!storedHash) {
+      return sendError(reply, 401, "unauthorized", "Invalid admin credentials");
+    }
+    const passwordHash = sha256(parsed.data.password);
+    if (!safeEqualHex(passwordHash, storedHash)) {
+      return sendError(reply, 401, "unauthorized", "Invalid admin credentials");
     }
 
-    const linkToken = await deps.authService.createMagicLink("admin", email);
-    const link = `${deps.appBaseUrl}/admin/verify?scope=admin&token=${encodeURIComponent(linkToken.token)}`;
-    await app.emailService.sendMagicLink(email, link, "admin");
-
-    return reply.code(204).send();
-  });
-
-  app.post("/admin/auth/magic-link/verify", async (request, reply) => {
-    const parsed = verifyMagicLinkSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return sendError(reply, 400, "bad_request", "Invalid token input");
-    }
-
-    const consumed = await deps.authService.consumeMagicLink("admin", parsed.data.token);
-    if (!consumed || !app.env.adminEmailAllowlist.has(consumed.email.toLowerCase())) {
-      return sendError(reply, 401, "unauthorized", "Magic link is invalid or expired");
-    }
-
-    const sessionToken = await deps.authService.createSession("admin", consumed.email);
+    const sessionToken = await deps.authService.createSession("admin", "admin");
     AuthService.setSessionCookie(reply, "admin", sessionToken);
     return reply.send({ ok: true });
   });
 
   app.post("/admin/projects", async (request, reply) => {
-    const actorEmail = await requireAdmin(app, request, deps.authService);
+    const actorEmail = await requireAdmin(request, deps.authService);
     if (!actorEmail) {
       return sendError(reply, 401, "unauthorized", "Admin session required");
     }
@@ -118,7 +102,7 @@ export function registerAdminRoutes(
   });
 
   app.post("/admin/projects/:projectId/keys", async (request, reply) => {
-    const actorEmail = await requireAdmin(app, request, deps.authService);
+    const actorEmail = await requireAdmin(request, deps.authService);
     if (!actorEmail) {
       return sendError(reply, 401, "unauthorized", "Admin session required");
     }
@@ -155,7 +139,7 @@ export function registerAdminRoutes(
   });
 
   app.post("/admin/tools", async (request, reply) => {
-    const actorEmail = await requireAdmin(app, request, deps.authService);
+    const actorEmail = await requireAdmin(request, deps.authService);
     if (!actorEmail) {
       return sendError(reply, 401, "unauthorized", "Admin session required");
     }
@@ -179,7 +163,7 @@ export function registerAdminRoutes(
   });
 
   app.post("/admin/tools/:toolId/tokens", async (request, reply) => {
-    const actorEmail = await requireAdmin(app, request, deps.authService);
+    const actorEmail = await requireAdmin(request, deps.authService);
     if (!actorEmail) {
       return sendError(reply, 401, "unauthorized", "Admin session required");
     }
@@ -212,7 +196,7 @@ export function registerAdminRoutes(
   });
 
   app.post("/admin/tools/:toolId/tokens/:tokenId/revoke", async (request, reply) => {
-    const actorEmail = await requireAdmin(app, request, deps.authService);
+    const actorEmail = await requireAdmin(request, deps.authService);
     if (!actorEmail) {
       return sendError(reply, 401, "unauthorized", "Admin session required");
     }
@@ -233,7 +217,7 @@ export function registerAdminRoutes(
   });
 
   app.get("/admin/projects", async (request, reply) => {
-    const actorEmail = await requireAdmin(app, request, deps.authService);
+    const actorEmail = await requireAdmin(request, deps.authService);
     if (!actorEmail) {
       return sendError(reply, 401, "unauthorized", "Admin session required");
     }
@@ -250,7 +234,7 @@ export function registerAdminRoutes(
   });
 
   app.get("/admin/tools", async (request, reply) => {
-    const actorEmail = await requireAdmin(app, request, deps.authService);
+    const actorEmail = await requireAdmin(request, deps.authService);
     if (!actorEmail) {
       return sendError(reply, 401, "unauthorized", "Admin session required");
     }
@@ -268,7 +252,7 @@ export function registerAdminRoutes(
   });
 
   app.get("/admin/usage", async (request, reply) => {
-    const actorEmail = await requireAdmin(app, request, deps.authService);
+    const actorEmail = await requireAdmin(request, deps.authService);
     if (!actorEmail) {
       return sendError(reply, 401, "unauthorized", "Admin session required");
     }

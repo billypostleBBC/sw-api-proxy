@@ -7,17 +7,10 @@ async function buildWebAdminTestApp() {
   const app = Fastify();
   await app.register(cookie);
 
-  app.decorate(
-    "env",
-    {
-      adminEmailAllowlist: new Set(["admin@bbc.co.uk"])
-    } as any
-  );
+  app.decorate("env", {} as any);
 
   const authService = {
-    getSessionEmail: vi.fn().mockResolvedValue(null),
-    consumeMagicLink: vi.fn().mockResolvedValue(null),
-    createSession: vi.fn().mockResolvedValue("st.test.test")
+    getSessionEmail: vi.fn().mockResolvedValue(null)
   };
 
   registerWebAdminRoutes(app, { authService: authService as any });
@@ -36,13 +29,13 @@ describe("web admin routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toContain("text/html");
     expect(response.body).toContain("Proxy Admin Login");
-    expect(response.body).toContain("requestMagicLinkForm");
+    expect(response.body).toContain("adminLoginForm");
     await app.close();
   });
 
   it("renders dashboard shell when admin session is valid", async () => {
     const { app, authService } = await buildWebAdminTestApp();
-    authService.getSessionEmail.mockResolvedValue("admin@bbc.co.uk");
+    authService.getSessionEmail.mockResolvedValue("admin");
 
     const response = await app.inject({
       method: "GET",
@@ -55,38 +48,36 @@ describe("web admin routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toContain("text/html");
     expect(response.body).toContain("Proxy Admin Dashboard");
-    expect(response.body).toContain("Signed in as admin@bbc.co.uk");
+    expect(response.body).toContain("Signed in as admin");
     expect(response.body).toContain("createProjectForm");
     await app.close();
   });
 
-  it("verifies admin magic link and redirects to /admin", async () => {
+  it("renders login when session subject is not admin", async () => {
     const { app, authService } = await buildWebAdminTestApp();
-    authService.consumeMagicLink.mockResolvedValue({ email: "admin@bbc.co.uk" });
-    authService.createSession.mockResolvedValue("st.new.secret");
+    authService.getSessionEmail.mockResolvedValue("someone@example.com");
 
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain("Proxy Admin Login");
+    await app.close();
+  });
+
+  it("does not register /admin/verify", async () => {
+    const { app } = await buildWebAdminTestApp();
     const response = await app.inject({
       method: "GET",
       url: "/admin/verify?scope=admin&token=ml.1234567890.abcdef"
     });
 
-    expect(response.statusCode).toBe(302);
-    expect(response.headers.location).toBe("/admin");
-    expect(authService.consumeMagicLink).toHaveBeenCalledWith("admin", "ml.1234567890.abcdef");
-    expect(authService.createSession).toHaveBeenCalledWith("admin", "admin@bbc.co.uk");
-    expect(response.cookies.some((cookieItem) => cookieItem.name === "admin_session")).toBe(true);
-    await app.close();
-  });
-
-  it("redirects to login with error when verify link is invalid", async () => {
-    const { app } = await buildWebAdminTestApp();
-    const response = await app.inject({
-      method: "GET",
-      url: "/admin/verify?scope=admin&token=bad"
-    });
-
-    expect(response.statusCode).toBe(302);
-    expect(response.headers.location).toBe("/admin?error=invalid_link");
+    expect(response.statusCode).toBe(404);
     await app.close();
   });
 

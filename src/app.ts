@@ -6,7 +6,6 @@ import { createPool } from "./db/pool.js";
 import { runMigrations } from "./db/migrations.js";
 import { Repo } from "./db/repo.js";
 import { KmsService } from "./crypto/kms.js";
-import { EmailService } from "./email/ses.js";
 import { TicketService } from "./auth/tickets.js";
 import { OpenAIClient } from "./openai/client.js";
 import { AuthService } from "./auth/service.js";
@@ -28,6 +27,8 @@ async function buildApp() {
           "request.headers.authorization",
           "req.body.apiKey",
           "request.body.apiKey",
+          "req.body.password",
+          "request.body.password",
           "res.headers['set-cookie']"
         ],
         censor: "[REDACTED]"
@@ -52,26 +53,24 @@ async function buildApp() {
   await runMigrations(pool);
 
   const repo = new Repo(pool);
-  await repo.upsertAdmins([...env.adminEmailAllowlist]);
+  await repo.syncAdminPasswordHash("admin", env.adminPasswordHash);
 
   const kmsService = new KmsService(env.awsRegion, env.kmsKeyId);
-  const emailService = new EmailService(env.awsRegion, env.sesFromEmail);
   const ticketService = new TicketService(env.clientTicketSigningKey, env.clientTicketTtlMinutes);
   const openaiClient = new OpenAIClient(env.openaiBaseUrl);
 
-  const authService = new AuthService(repo, env.sessionTtlHours, env.magicLinkTtlMinutes);
+  const authService = new AuthService(repo, env.sessionTtlHours);
   const limitService = new LimitService(repo);
   const usageService = new UsageService(repo);
 
   app.decorate("env", env);
   app.decorate("repo", repo);
   app.decorate("kmsService", kmsService);
-  app.decorate("emailService", emailService);
   app.decorate("ticketService", ticketService);
   app.decorate("openaiClient", openaiClient);
 
-  registerAdminRoutes(app, { authService, repo, usageService, appBaseUrl: env.appBaseUrl });
-  registerAuthRoutes(app, { authService, repo, ticketService, appBaseUrl: env.appBaseUrl });
+  registerAdminRoutes(app, { authService, repo, usageService });
+  registerAuthRoutes(app, { repo, ticketService });
   registerProxyRoutes(app, { limitService, usageService });
   registerWebAdminRoutes(app, { authService });
 

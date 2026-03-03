@@ -1,7 +1,12 @@
+import { createHash } from "node:crypto";
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import { describe, expect, it, vi } from "vitest";
 import { registerAdminRoutes } from "../src/admin/routes.js";
+
+function sha256(input: string): string {
+  return createHash("sha256").update(input).digest("hex");
+}
 
 async function buildAdminTestApp() {
   const app = Fastify();
@@ -10,17 +15,17 @@ async function buildAdminTestApp() {
   app.decorate(
     "env",
     {
-      adminEmailAllowlist: new Set(["admin@bbc.co.uk"]),
       toolTokenTtlDays: 90
     } as any
   );
   app.decorate("kmsService", { encrypt: vi.fn() } as any);
-  app.decorate("emailService", { sendMagicLink: vi.fn() } as any);
 
   const authService = {
-    getSessionEmail: vi.fn().mockResolvedValue("admin@bbc.co.uk")
+    getSessionEmail: vi.fn().mockResolvedValue("admin"),
+    createSession: vi.fn().mockResolvedValue("st.test.test")
   };
   const repo = {
+    getAdminPasswordHash: vi.fn().mockResolvedValue(sha256("correct-password")),
     listProjects: vi.fn().mockResolvedValue([]),
     listTools: vi.fn().mockResolvedValue([])
   };
@@ -29,15 +34,64 @@ async function buildAdminTestApp() {
   registerAdminRoutes(app, {
     authService: authService as any,
     repo: repo as any,
-    usageService: usageService as any,
-    appBaseUrl: "https://proxy.example.com"
+    usageService: usageService as any
   });
 
   await app.ready();
-  return { app, repo };
+  return { app, repo, authService };
 }
 
-describe("admin discovery routes", () => {
+describe("admin routes", () => {
+  it("logs in admin with password", async () => {
+    const { app, authService } = await buildAdminTestApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/auth/login",
+      payload: { password: "correct-password" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+    expect(authService.createSession).toHaveBeenCalledWith("admin", "admin");
+    expect(response.cookies.some((cookieItem) => cookieItem.name === "admin_session")).toBe(true);
+    await app.close();
+  });
+
+  it("rejects wrong admin password", async () => {
+    const { app } = await buildAdminTestApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/auth/login",
+      payload: { password: "wrong-password" }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: "unauthorized",
+      message: "Invalid admin credentials"
+    });
+    await app.close();
+  });
+
+  it("validates login payload", async () => {
+    const { app } = await buildAdminTestApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/auth/login",
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: "bad_request",
+      message: "Invalid password input"
+    });
+    await app.close();
+  });
+
   it("requires admin session for GET /admin/projects", async () => {
     const { app } = await buildAdminTestApp();
     const response = await app.inject({

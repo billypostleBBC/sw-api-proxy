@@ -38,6 +38,30 @@ type ToolRow = {
 export class Repo {
   constructor(private readonly pool: pg.Pool) {}
 
+  async syncAdminPasswordHash(actorId: "admin", passwordHash: string): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO admins (email, status, password_hash)
+       VALUES ($1, 'active', $2)
+       ON CONFLICT (email) DO UPDATE SET
+         status = 'active',
+         password_hash = EXCLUDED.password_hash,
+         updated_at = now()`,
+      [actorId, passwordHash]
+    );
+  }
+
+  async getAdminPasswordHash(actorId: "admin"): Promise<string | null> {
+    const result = await this.pool.query<{ password_hash: string | null }>(
+      `SELECT password_hash
+       FROM admins
+       WHERE email = $1 AND status = 'active'
+       LIMIT 1`,
+      [actorId]
+    );
+    const row = result.rows[0];
+    return row?.password_hash ?? null;
+  }
+
   async upsertAdmins(emails: string[]): Promise<void> {
     for (const email of emails) {
       await this.pool.query(
@@ -250,46 +274,6 @@ export class Repo {
       rpmCap: token.rpm_cap,
       dailyTokenCap: Number(token.daily_token_cap)
     };
-  }
-
-  async createMagicLink(input: {
-    id: string;
-    email: string;
-    tokenHash: string;
-    scope: Scope;
-    expiresAt: Date;
-  }): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO magic_links (id, email, token_hash, scope, expires_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [input.id, input.email, input.tokenHash, input.scope, input.expiresAt]
-    );
-  }
-
-  async consumeMagicLink(input: { id: string; secret: string; scope: Scope }): Promise<{ email: string } | null> {
-    const result = await this.pool.query<{
-      email: string;
-      token_hash: string;
-      consumed_at: Date | null;
-      expires_at: Date;
-    }>(
-      `SELECT email, token_hash, consumed_at, expires_at
-       FROM magic_links
-       WHERE id = $1 AND scope = $2`,
-      [input.id, input.scope]
-    );
-
-    const row = result.rows[0];
-    if (!row || row.consumed_at || row.expires_at <= new Date()) {
-      return null;
-    }
-    if (!safeEqualHex(sha256(input.secret), row.token_hash)) {
-      return null;
-    }
-
-    await this.pool.query(`UPDATE magic_links SET consumed_at = now() WHERE id = $1`, [input.id]);
-
-    return { email: row.email };
   }
 
   async upsertUser(email: string): Promise<void> {

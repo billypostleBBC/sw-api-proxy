@@ -19,11 +19,9 @@
       "secrets": [
         { "name": "DATABASE_URL", "valueFrom": "arn:aws:ssm:eu-west-2:<account-id>:parameter/proxy-api/DATABASE_URL" },
         { "name": "KMS_KEY_ID", "valueFrom": "arn:aws:ssm:eu-west-2:<account-id>:parameter/proxy-api/KMS_KEY_ID" },
-        { "name": "SES_FROM_EMAIL", "valueFrom": "arn:aws:ssm:eu-west-2:<account-id>:parameter/proxy-api/SES_FROM_EMAIL" },
-        { "name": "APP_BASE_URL", "valueFrom": "arn:aws:ssm:eu-west-2:<account-id>:parameter/proxy-api/APP_BASE_URL" },
+        { "name": "ADMIN_PASSWORD_HASH", "valueFrom": "arn:aws:ssm:eu-west-2:<account-id>:parameter/proxy-api/ADMIN_PASSWORD_HASH" },
         { "name": "SESSION_SIGNING_KEY", "valueFrom": "arn:aws:ssm:eu-west-2:<account-id>:parameter/proxy-api/SESSION_SIGNING_KEY" },
         { "name": "CLIENT_TICKET_SIGNING_KEY", "valueFrom": "arn:aws:ssm:eu-west-2:<account-id>:parameter/proxy-api/CLIENT_TICKET_SIGNING_KEY" },
-        { "name": "ADMIN_EMAIL_ALLOWLIST", "valueFrom": "arn:aws:ssm:eu-west-2:<account-id>:parameter/proxy-api/ADMIN_EMAIL_ALLOWLIST" },
         { "name": "CORS_ALLOWED_ORIGINS", "valueFrom": "arn:aws:ssm:eu-west-2:<account-id>:parameter/proxy-api/CORS_ALLOWED_ORIGINS" }
       ],
       "logConfiguration": {

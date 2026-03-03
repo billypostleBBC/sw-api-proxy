@@ -6,9 +6,9 @@ This document defines the operating scope and engineering rules for this reposit
 Treat this file as project law.
 If a request conflicts with this file, update this file first or do not implement the request.
 
-## Repository Snapshot (as of 2026-02-19)
+## Repository Snapshot (as of 2026-03-03)
 TypeScript Fastify service that proxies OpenAI API calls for internal tools with:
-1. Admin + user magic-link auth.
+1. Password-based admin auth and tool-token ticket issuance.
 2. Project/tool management with per-project limits.
 3. Server-side encrypted OpenAI key storage (AWS KMS).
 4. Usage + audit persistence in Postgres.
@@ -22,10 +22,9 @@ TypeScript Fastify service that proxies OpenAI API calls for internal tools with
    - `POST /proxy/v1/embeddings`
    - `GET /proxy/v1/models`
 4. Support current auth flows:
-   - Admin magic link: request + verify.
-   - User magic link: request + verify.
-   - User client ticket issuance for tool access.
-   - Tool bearer tokens.
+   - Admin password login (`POST /admin/auth/login`) issuing admin session cookies.
+   - Client ticket issuance via tool bearer token (`POST /auth/client-ticket`).
+   - Tool bearer tokens for proxy endpoint access.
 5. Enforce per-project RPM and daily token caps.
 6. Persist operational data in existing tables (`projects`, `tools`, `tool_tokens`, `usage_events`, `audit_logs`, etc.).
 
@@ -35,6 +34,7 @@ TypeScript Fastify service that proxies OpenAI API calls for internal tools with
 3. Per-user API key ownership or client-managed secrets.
 4. Complex architectural rewrites (DI containers, generic plugin frameworks).
 5. Non-MVP infra additions (multi-region, event streaming, telemetry platforms).
+6. Magic-link auth flows and SES-based email delivery.
 
 ## Codebase Rules
 1. Source of truth is `src/`; `dist/` is build output.
@@ -43,7 +43,7 @@ TypeScript Fastify service that proxies OpenAI API calls for internal tools with
 4. Keep error payload shape consistent with `sendError`:
    - `{ error, message, details? }`
 5. Preserve existing auth token primitives:
-   - Opaque tokens for magic links/sessions/tool tokens.
+   - Opaque tokens for sessions/tool tokens.
    - JWT (HS256) for short-lived client tickets.
 6. Preserve DB-first approach:
    - Additive schema changes via `src/db/migrations.ts`.
@@ -70,7 +70,7 @@ TypeScript Fastify service that proxies OpenAI API calls for internal tools with
    - ECS Fargate + ALB,
    - RDS Postgres,
    - KMS for encryption,
-   - SES for magic-link email.
+   - no SES dependency for auth flows.
 3. Do not introduce infrastructure that is not reflected in `infra/README.md` unless this file is updated first.
 
 ## Definition of Done
@@ -88,3 +88,4 @@ Any meaningful requirement change must update this file in the same change set, 
 
 ### Change Log
 - 2026-02-19: Replaced generic charter with repo-specific project law after full repo scan (Fastify + Postgres + AWS KMS/SES + OpenAI proxy).
+- 2026-03-03: Replaced magic-link/SES auth assumptions with password-based admin login and tool-token-backed client ticket flow.

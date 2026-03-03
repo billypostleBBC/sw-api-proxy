@@ -4,6 +4,7 @@ const statements: string[] = [
   `CREATE TABLE IF NOT EXISTS admins (
     id BIGSERIAL PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
+    password_hash TEXT,
     status TEXT NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -108,7 +109,8 @@ const statements: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_usage_events_project_created_at ON usage_events(project_id, created_at DESC);`,
   `CREATE INDEX IF NOT EXISTS idx_magic_links_email_scope_expires ON magic_links(email, scope, expires_at);`,
   `CREATE INDEX IF NOT EXISTS idx_sessions_subject_scope_expires ON sessions(subject_email, scope, expires_at);`,
-  `CREATE INDEX IF NOT EXISTS idx_tool_tokens_tool_status_expires ON tool_tokens(tool_id, status, expires_at);`
+  `CREATE INDEX IF NOT EXISTS idx_tool_tokens_tool_status_expires ON tool_tokens(tool_id, status, expires_at);`,
+  `ALTER TABLE admins ADD COLUMN IF NOT EXISTS password_hash TEXT;`
 ];
 
 export async function runMigrations(pool: pg.Pool): Promise<void> {
