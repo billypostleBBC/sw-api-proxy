@@ -2,6 +2,10 @@
   "family": "proxy-api",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
+  "runtimePlatform": {
+    "cpuArchitecture": "ARM64",
+    "operatingSystemFamily": "LINUX"
+  },
   "cpu": "512",
   "memory": "1024",
   "executionRoleArn": "arn:aws:iam::<account-id>:role/ecsTaskExecutionRole",
@@ -14,7 +18,8 @@
       "portMappings": [{ "containerPort": 3000, "protocol": "tcp" }],
       "environment": [
         { "name": "PORT", "value": "3000" },
-        { "name": "AWS_REGION", "value": "eu-west-2" }
+        { "name": "AWS_REGION", "value": "eu-west-2" },
+        { "name": "PGSSLMODE", "value": "require" }
       ],
       "secrets": [
         { "name": "DATABASE_URL", "valueFrom": "arn:aws:ssm:eu-west-2:<account-id>:parameter/proxy-api/DATABASE_URL" },
