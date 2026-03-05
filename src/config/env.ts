@@ -5,17 +5,14 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
   AWS_REGION: z.string().default("eu-west-2"),
   KMS_KEY_ID: z.string().min(1),
-  SES_FROM_EMAIL: z.string().email(),
-  APP_BASE_URL: z.string().url(),
+  ADMIN_PASSWORD_HASH: z.string().regex(/^[a-f0-9]{64}$/, "ADMIN_PASSWORD_HASH must be 64-char lowercase hex"),
   SESSION_SIGNING_KEY: z.string().min(16),
   CLIENT_TICKET_SIGNING_KEY: z.string().min(16),
-  ADMIN_EMAIL_ALLOWLIST: z.string().min(1),
   CORS_ALLOWED_ORIGINS: z.string().default(""),
   RATE_LIMIT_DEFAULT_RPM: z.coerce.number().int().positive().default(60),
   TOKEN_CAP_DEFAULT_DAILY: z.coerce.number().int().positive().default(2_000_000),
   OPENAI_BASE_URL: z.string().url().default("https://api.openai.com"),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(10),
-  MAGIC_LINK_TTL_MINUTES: z.coerce.number().int().positive().default(10),
   CLIENT_TICKET_TTL_MINUTES: z.coerce.number().int().positive().default(5),
   TOOL_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(90)
 });
@@ -25,17 +22,14 @@ export type AppEnv = {
   databaseUrl: string;
   awsRegion: string;
   kmsKeyId: string;
-  sesFromEmail: string;
-  appBaseUrl: string;
+  adminPasswordHash: string;
   sessionSigningKey: string;
   clientTicketSigningKey: string;
-  adminEmailAllowlist: Set<string>;
   corsAllowedOrigins: string[];
   defaultRpm: number;
   defaultDailyTokenCap: number;
   openaiBaseUrl: string;
   sessionTtlHours: number;
-  magicLinkTtlMinutes: number;
   clientTicketTtlMinutes: number;
   toolTokenTtlDays: number;
 };
@@ -47,13 +41,9 @@ export function loadEnv(raw: NodeJS.ProcessEnv = process.env): AppEnv {
     databaseUrl: parsed.DATABASE_URL,
     awsRegion: parsed.AWS_REGION,
     kmsKeyId: parsed.KMS_KEY_ID,
-    sesFromEmail: parsed.SES_FROM_EMAIL,
-    appBaseUrl: parsed.APP_BASE_URL,
+    adminPasswordHash: parsed.ADMIN_PASSWORD_HASH,
     sessionSigningKey: parsed.SESSION_SIGNING_KEY,
     clientTicketSigningKey: parsed.CLIENT_TICKET_SIGNING_KEY,
-    adminEmailAllowlist: new Set(
-      parsed.ADMIN_EMAIL_ALLOWLIST.split(",").map((email) => email.trim().toLowerCase())
-    ),
     corsAllowedOrigins: parsed.CORS_ALLOWED_ORIGINS
       ? parsed.CORS_ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
       : [],
@@ -61,7 +51,6 @@ export function loadEnv(raw: NodeJS.ProcessEnv = process.env): AppEnv {
     defaultDailyTokenCap: parsed.TOKEN_CAP_DEFAULT_DAILY,
     openaiBaseUrl: parsed.OPENAI_BASE_URL,
     sessionTtlHours: parsed.SESSION_TTL_HOURS,
-    magicLinkTtlMinutes: parsed.MAGIC_LINK_TTL_MINUTES,
     clientTicketTtlMinutes: parsed.CLIENT_TICKET_TTL_MINUTES,
     toolTokenTtlDays: parsed.TOOL_TOKEN_TTL_DAYS
   };

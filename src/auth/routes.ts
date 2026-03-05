@@ -1,80 +1,43 @@
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
 import { sendError } from "../utils/http.js";
-import { AuthService } from "./service.js";
 import type { Repo } from "../db/repo.js";
 import { TicketService } from "./tickets.js";
 
-const requestSchema = z.object({ email: z.string().email() });
-const verifySchema = z.object({ token: z.string().min(10) });
-const ticketSchema = z.object({ toolSlug: z.string().min(1) });
-
 export function registerAuthRoutes(
   app: FastifyInstance,
-  deps: { authService: AuthService; repo: Repo; ticketService: TicketService; appBaseUrl: string }
+  deps: { repo: Repo; ticketService: TicketService }
 ): void {
-  app.post("/auth/magic-link/request", async (request, reply) => {
-    const parsed = requestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return sendError(reply, 400, "bad_request", "Invalid email input");
-    }
-
-    const email = parsed.data.email.toLowerCase();
-    const linkToken = await deps.authService.createMagicLink("user", email);
-    const link = `${deps.appBaseUrl}/auth/verify?scope=user&token=${encodeURIComponent(linkToken.token)}`;
-    await app.emailService.sendMagicLink(email, link, "user");
-
-    return reply.code(204).send();
-  });
-
-  app.post("/auth/magic-link/verify", async (request, reply) => {
-    const parsed = verifySchema.safeParse(request.body);
-    if (!parsed.success) {
-      return sendError(reply, 400, "bad_request", "Invalid token input");
-    }
-
-    const consumed = await deps.authService.consumeMagicLink("user", parsed.data.token);
-    if (!consumed) {
-      return sendError(reply, 401, "unauthorized", "Magic link is invalid or expired");
-    }
-
-    await deps.repo.upsertUser(consumed.email);
-    const sessionToken = await deps.authService.createSession("user", consumed.email);
-    AuthService.setSessionCookie(reply, "user", sessionToken);
-
-    return reply.send({ ok: true });
-  });
-
   app.post("/auth/client-ticket", async (request, reply) => {
-    const session = AuthService.getSessionFromCookie(request, "user");
-    if (!session) {
-      return sendError(reply, 401, "unauthorized", "User session is required");
-    }
-    const email = await deps.authService.getSessionEmail("user", session);
-    if (!email) {
-      return sendError(reply, 401, "unauthorized", "Invalid user session");
+    if (request.body !== undefined && request.body !== null) {
+      return sendError(reply, 400, "bad_request", "Request body is not allowed");
     }
 
-    const parsed = ticketSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return sendError(reply, 400, "bad_request", "Invalid tool slug");
+    const auth = request.headers.authorization;
+    if (!auth?.startsWith("Bearer ")) {
+      return sendError(reply, 401, "unauthorized", "Missing or invalid bearer token");
     }
 
-    const tool = await deps.repo.findToolBySlug(parsed.data.toolSlug);
+    const token = auth.slice("Bearer ".length).trim();
+    const toolAuth = await deps.repo.findAuthByToolToken(token);
+    if (!toolAuth) {
+      return sendError(reply, 401, "unauthorized", "Missing or invalid bearer token");
+    }
+
+    const tool = await deps.repo.findToolBySlug(toolAuth.toolSlug);
     if (!tool || tool.toolStatus !== "active" || tool.projectStatus !== "active") {
       return sendError(reply, 403, "forbidden", "Tool or project is inactive");
     }
 
     const ticket = await deps.ticketService.createTicket({
-      sub: email,
-      toolId: tool.toolId,
-      toolSlug: parsed.data.toolSlug,
-      projectId: tool.projectId,
-      projectSlug: tool.projectSlug,
-      rpmCap: tool.rpmCap,
-      dailyTokenCap: tool.dailyTokenCap
+      sub: `tool:${toolAuth.toolSlug}`,
+      toolId: toolAuth.toolId,
+      toolSlug: toolAuth.toolSlug,
+      projectId: toolAuth.projectId,
+      projectSlug: toolAuth.projectSlug,
+      rpmCap: toolAuth.rpmCap,
+      dailyTokenCap: toolAuth.dailyTokenCap
     });
 
-    return reply.send({ ticket, expiresInMinutes: 5 });
+    return reply.send({ ticket, expiresInMinutes: app.env.clientTicketTtlMinutes });
   });
 }

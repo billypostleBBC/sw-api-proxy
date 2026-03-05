@@ -33,7 +33,6 @@ Set required variables:
 
 ```bash
 export BASE_URL="https://proxy.example.com"
-export ADMIN_EMAIL="admin@bbc.co.uk"
 export COOKIE_JAR="/tmp/proxy-api-admin.cookie"
 
 export PROJECT_SLUG="alt-text-generator-prod"
@@ -50,7 +49,7 @@ export TOOL_MODE="server"
 Admin auth:
 
 ```bash
-scripts/admin-auth.sh "$BASE_URL" "$ADMIN_EMAIL" "$COOKIE_JAR"
+scripts/admin-auth.sh "$BASE_URL" "$COOKIE_JAR"
 ```
 
 Project + key + tool + token bootstrap:

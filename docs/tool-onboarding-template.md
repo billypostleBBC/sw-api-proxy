@@ -10,8 +10,7 @@ Use this template when:
 3. You need a repeatable operator and agent runbook.
 
 Do not use this template when:
-1. The tool is intentionally browser-ticket based (`/auth/client-ticket`) and has no backend relay.
-2. You are changing proxy architecture or adding non-MVP infrastructure.
+1. You are changing proxy architecture or adding non-MVP infrastructure.
 
 ## Inputs required before running
 
@@ -19,7 +18,6 @@ Set and confirm these standardized variables before running commands:
 
 ```bash
 export BASE_URL="<BASE_URL>"
-export ADMIN_EMAIL="<ADMIN_EMAIL>"
 
 export PROJECT_SLUG="<PROJECT_SLUG>"
 export PROJECT_NAME="<PROJECT_NAME>"
@@ -47,7 +45,6 @@ Input notes:
 
 ```bash
 test -n "$BASE_URL"
-test -n "$ADMIN_EMAIL"
 test -n "$PROJECT_SLUG"
 test -n "$PROJECT_NAME"
 test -n "$ENV"
@@ -68,10 +65,10 @@ command -v node
 
 ## Admin auth
 
-Request and verify admin magic-link session cookie:
+Sign in and establish admin session cookie:
 
 ```bash
-scripts/admin-auth.sh "$BASE_URL" "$ADMIN_EMAIL"
+scripts/admin-auth.sh "$BASE_URL"
 ```
 
 Default cookie jar created by script:
@@ -140,8 +137,11 @@ OPENAI_API_KEY=<tool bearer token>
 
 Rules:
 1. Keep token server-side only.
-2. Plugin/browser should call backend relay, not proxy directly with long-lived token.
-3. Supported proxy operations for this onboarding pattern: `POST /proxy/v1/responses` (optionally `GET /proxy/v1/models` for smoke checks).
+2. Supported proxy operations for this onboarding pattern: `POST /proxy/v1/responses` (optionally `GET /proxy/v1/models` for smoke checks).
+
+For browser tools:
+1. Call `POST /auth/client-ticket` with `Authorization: Bearer tt.<id>.<secret>` and no body.
+2. Use the returned short-lived ticket for `/proxy/v1/*` calls.
 
 ## Smoke verification
 
@@ -188,9 +188,8 @@ If rotation fails after deploy:
 
 If onboarding script fails:
 1. Check admin cookie validity.
-2. Check admin email allowlist.
-3. Check payload inputs and caps are numeric.
-4. Re-run failed step only after root cause is clear.
+2. Check payload inputs and caps are numeric.
+3. Re-run failed step only after root cause is clear.
 
 ## Onboarding completion checklist
 

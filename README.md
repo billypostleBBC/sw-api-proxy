@@ -4,8 +4,8 @@ MVP TypeScript service for securely proxying OpenAI requests to internal tools.
 
 ## Features
 - KMS-encrypted OpenAI key storage per project.
-- Admin auth via BBC email magic links.
-- User auth via magic-link sessions and short-lived client tickets.
+- Admin auth via password login and admin session cookies.
+- Client ticket issuance from tool bearer tokens.
 - Tool auth via long-lived hashed tokens.
 - Proxy endpoints:
   - `POST /proxy/v1/responses`
@@ -36,8 +36,8 @@ On startup, DB migrations run automatically.
 
 ## Core endpoints
 ### Admin auth
-- `POST /admin/auth/magic-link/request`
-- `POST /admin/auth/magic-link/verify`
+- `POST /admin/auth/login`
+- `POST /admin/logout`
 
 ### Admin management
 - `POST /admin/projects`
@@ -47,9 +47,7 @@ On startup, DB migrations run automatically.
 - `POST /admin/tools/:toolId/tokens/:tokenId/revoke`
 - `GET /admin/usage`
 
-### User auth
-- `POST /auth/magic-link/request`
-- `POST /auth/magic-link/verify`
+### Client auth
 - `POST /auth/client-ticket`
 
 ### Proxy

@@ -4,30 +4,9 @@ const USER_COOKIE = "user_session";
 export class AuthService {
     repo;
     sessionTtlHours;
-    magicLinkTtlMinutes;
-    constructor(repo, sessionTtlHours, magicLinkTtlMinutes) {
+    constructor(repo, sessionTtlHours) {
         this.repo = repo;
         this.sessionTtlHours = sessionTtlHours;
-        this.magicLinkTtlMinutes = magicLinkTtlMinutes;
-    }
-    async createMagicLink(scope, email) {
-        const opaque = makeOpaqueToken("ml");
-        const expiresAt = new Date(Date.now() + this.magicLinkTtlMinutes * 60_000);
-        await this.repo.createMagicLink({
-            id: opaque.id,
-            email,
-            tokenHash: opaque.secretHash,
-            scope,
-            expiresAt
-        });
-        return { token: opaque.token, expiresAt };
-    }
-    async consumeMagicLink(scope, token) {
-        const parsed = parseOpaqueToken(token, "ml");
-        if (!parsed) {
-            return null;
-        }
-        return this.repo.consumeMagicLink({ id: parsed.id, secret: parsed.secret, scope });
     }
     async createSession(scope, subjectEmail) {
         const opaque = makeOpaqueToken("st");
