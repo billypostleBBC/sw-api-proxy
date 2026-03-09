@@ -1,0 +1,52 @@
+{
+  "ServiceArn": "arn:aws:apprunner:<region>:<account-id>:service/<service-name>/<service-id>",
+  "SourceConfiguration": {
+    "ImageRepository": {
+      "ImageIdentifier": "<account-id>.dkr.ecr.<region>.amazonaws.com/proxy-api:<immutable-image-tag>",
+      "ImageRepositoryType": "ECR",
+      "ImageConfiguration": {
+        "Port": "3000",
+        "RuntimeEnvironmentVariables": {
+          "AWS_REGION": "<region>"
+        },
+        "RuntimeEnvironmentSecrets": {
+          "DATABASE_URL": "/proxy-api/<env>/DATABASE_URL",
+          "KMS_KEY_ID": "/proxy-api/<env>/KMS_KEY_ID",
+          "SES_FROM_EMAIL": "/proxy-api/<env>/SES_FROM_EMAIL",
+          "APP_BASE_URL": "/proxy-api/<env>/APP_BASE_URL",
+          "SESSION_SIGNING_KEY": "/proxy-api/<env>/SESSION_SIGNING_KEY",
+          "CLIENT_TICKET_SIGNING_KEY": "/proxy-api/<env>/CLIENT_TICKET_SIGNING_KEY",
+          "ADMIN_EMAIL_ALLOWLIST": "/proxy-api/<env>/ADMIN_EMAIL_ALLOWLIST",
+          "CORS_ALLOWED_ORIGINS": "/proxy-api/<env>/CORS_ALLOWED_ORIGINS"
+        }
+      }
+    },
+    "AutoDeploymentsEnabled": false,
+    "AuthenticationConfiguration": {
+      "AccessRoleArn": "arn:aws:iam::<account-id>:role/<apprunner-ecr-access-role>"
+    }
+  },
+  "InstanceConfiguration": {
+    "Cpu": "1024",
+    "Memory": "2048",
+    "InstanceRoleArn": "arn:aws:iam::<account-id>:role/<apprunner-instance-role>"
+  },
+  "HealthCheckConfiguration": {
+    "Protocol": "HTTP",
+    "Path": "/health",
+    "Interval": 10,
+    "Timeout": 5,
+    "HealthyThreshold": 1,
+    "UnhealthyThreshold": 5
+  },
+  "NetworkConfiguration": {
+    "IngressConfiguration": {
+      "IsPubliclyAccessible": true
+    },
+    "EgressConfiguration": {
+      "EgressType": "VPC",
+      "VpcConnectorArn": "arn:aws:apprunner:<region>:<account-id>:vpcconnector/<connector-name>/<connector-id>"
+    },
+    "IpAddressType": "IPV4"
+  }
+}

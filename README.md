@@ -58,7 +58,14 @@ On startup, DB migrations run automatically.
 - `GET /proxy/v1/models`
 
 ## Deployment
-See:
+Primary deployment (App Runner):
 - `infra/README.md`
-- `infra/ecs-task-definition.json`
+- `infra/apprunner/service.template.json`
+- `infra/apprunner/update-service.template.json`
+- `docs/architecture-app-runner-pivot.md`
+- `docs/deployment-checklist.md`
 - `infra/Dockerfile`
+
+Legacy ECS artifacts (archived, not primary):
+- `infra/legacy/ecs/README.md`
+- `infra/legacy/ecs/ecs-task-definition.json`
