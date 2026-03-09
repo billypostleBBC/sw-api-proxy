@@ -4,8 +4,9 @@ const EnvSchema = z.object({
     DATABASE_URL: z.string().min(1),
     AWS_REGION: z.string().default("eu-west-2"),
     KMS_KEY_ID: z.string().min(1),
-    ADMIN_PASSWORD_HASH: z.string().regex(/^[a-f0-9]{64}$/, "ADMIN_PASSWORD_HASH must be 64-char lowercase hex"),
+    APP_BASE_URL: z.string().url(),
     SESSION_SIGNING_KEY: z.string().min(16),
+    ADMIN_PASSWORD: z.string().min(8),
     CLIENT_TICKET_SIGNING_KEY: z.string().min(16),
     CORS_ALLOWED_ORIGINS: z.string().default(""),
     RATE_LIMIT_DEFAULT_RPM: z.coerce.number().int().positive().default(60),
@@ -22,8 +23,9 @@ export function loadEnv(raw = process.env) {
         databaseUrl: parsed.DATABASE_URL,
         awsRegion: parsed.AWS_REGION,
         kmsKeyId: parsed.KMS_KEY_ID,
-        adminPasswordHash: parsed.ADMIN_PASSWORD_HASH,
+        appBaseUrl: parsed.APP_BASE_URL,
         sessionSigningKey: parsed.SESSION_SIGNING_KEY,
+        adminPassword: parsed.ADMIN_PASSWORD,
         clientTicketSigningKey: parsed.CLIENT_TICKET_SIGNING_KEY,
         corsAllowedOrigins: parsed.CORS_ALLOWED_ORIGINS
             ? parsed.CORS_ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())

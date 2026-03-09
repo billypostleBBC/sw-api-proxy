@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { Repo } from "../db/repo.js";
-import { makeOpaqueToken, parseOpaqueToken, sha256 } from "../utils/crypto.js";
+import { makeOpaqueToken, parseOpaqueToken, safeEqualHex, sha256 } from "../utils/crypto.js";
 import type { Scope } from "../db/types.js";
 
 const ADMIN_COOKIE = "admin_session";
@@ -64,5 +64,9 @@ export class AuthService {
 
   static hashToken(raw: string): string {
     return sha256(raw);
+  }
+
+  static verifyPassword(inputPassword: string, expectedPassword: string): boolean {
+    return safeEqualHex(sha256(inputPassword), sha256(expectedPassword));
   }
 }

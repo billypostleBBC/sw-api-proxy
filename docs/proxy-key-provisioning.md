@@ -61,14 +61,14 @@ scripts/smoke-proxy.sh "$BASE_URL" "<tool_token>" "gpt-4.1-mini"
 
 Use this if scripts cannot run in your environment.
 
-Sign in as admin and store cookie:
+Login as admin and store cookie:
 
 ```bash
-export ADMIN_PASSWORD="replace-with-admin-password"
+export ADMIN_PASSWORD="replace-with-your-admin-password"
 
 curl -i -c admin.cookies -X POST "$BASE_URL/admin/auth/login" \
   -H "Content-Type: application/json" \
-  -d "{\"password\":\"$ADMIN_PASSWORD\"}"
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}"
 ```
 
 Find project by slug (or create if not found):

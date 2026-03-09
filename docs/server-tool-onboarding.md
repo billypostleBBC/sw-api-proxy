@@ -21,7 +21,7 @@ Create one project per product and environment:
 scripts/admin-auth.sh https://proxy.example.com
 ```
 
-This creates a cookie jar (default: `/tmp/proxy-api-admin.cookie`) after you enter the admin password.
+This creates a cookie jar (default: `/tmp/proxy-api-admin.cookie`) after successful password login.
 
 ## Step 2: Create/find project, set key, create/find tool, mint token
 

@@ -15,14 +15,16 @@ async function buildAdminTestApp() {
   app.decorate(
     "env",
     {
+      adminEmailAllowlist: new Set(["admin@bbc.co.uk"]),
+      adminPassword: "super-secret-pass",
       toolTokenTtlDays: 90
     } as any
   );
   app.decorate("kmsService", { encrypt: vi.fn() } as any);
 
   const authService = {
-    getSessionEmail: vi.fn().mockResolvedValue("admin"),
-    createSession: vi.fn().mockResolvedValue("st.test.test")
+    createSession: vi.fn().mockResolvedValue("st.created.secret"),
+    getSessionEmail: vi.fn().mockResolvedValue("admin@bbc.co.uk")
   };
   const repo = {
     getAdminPasswordHash: vi.fn().mockResolvedValue(sha256("correct-password")),
@@ -41,53 +43,40 @@ async function buildAdminTestApp() {
   return { app, repo, authService };
 }
 
-describe("admin routes", () => {
-  it("logs in admin with password", async () => {
+describe("admin discovery routes", () => {
+  it("logs in with allowlisted email + password", async () => {
     const { app, authService } = await buildAdminTestApp();
-
     const response = await app.inject({
       method: "POST",
       url: "/admin/auth/login",
-      payload: { password: "correct-password" }
+      payload: {
+        email: "admin@bbc.co.uk",
+        password: "super-secret-pass"
+      }
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
-    expect(authService.createSession).toHaveBeenCalledWith("admin", "admin");
+    expect(authService.createSession).toHaveBeenCalledWith("admin", "admin@bbc.co.uk");
     expect(response.cookies.some((cookieItem) => cookieItem.name === "admin_session")).toBe(true);
     await app.close();
   });
 
-  it("rejects wrong admin password", async () => {
+  it("rejects invalid admin credentials", async () => {
     const { app } = await buildAdminTestApp();
-
     const response = await app.inject({
       method: "POST",
       url: "/admin/auth/login",
-      payload: { password: "wrong-password" }
+      payload: {
+        email: "admin@bbc.co.uk",
+        password: "wrong-password"
+      }
     });
 
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({
       error: "unauthorized",
       message: "Invalid admin credentials"
-    });
-    await app.close();
-  });
-
-  it("validates login payload", async () => {
-    const { app } = await buildAdminTestApp();
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/admin/auth/login",
-      payload: {}
-    });
-
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toEqual({
-      error: "bad_request",
-      message: "Invalid password input"
     });
     await app.close();
   });

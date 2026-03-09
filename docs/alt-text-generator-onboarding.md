@@ -1,35 +1,42 @@
-# Alt-text Generator Onboarding (Gemini -> Proxy-Backed OpenAI)
+# Alt-text Generator Onboarding (Proxy-Backed OpenAI)
 
-This runbook onboards Alt-text Generator to SW API Proxy and defines migration constraints for a backend-relay architecture.
+This runbook is the source of truth for integrating Alt-text Generator with SW API Proxy.
 
-## 1) Scope and architecture decision
+## 1) Architecture Decision (Locked For MVP)
 
-This onboarding is fixed to backend relay mode:
-1. Plugin does not call proxy directly with long-lived token.
-2. Existing backend relay holds proxy token.
+Use backend relay mode only:
+1. Plugin calls your relay, not proxy endpoints directly.
+2. Relay calls `POST /proxy/v1/responses` using a long-lived tool token.
+3. Plugin never sees long-lived proxy credentials.
 
-Rationale:
-1. Keeps long-lived credentials out of plugin bundle/runtime.
-2. Matches fail-closed security posture in this proxy.
-3. Keeps token rotation operationally simple.
+Why this approach:
+1. Fastest path to production with current code.
+2. Keeps token rotation simple.
+3. Avoids browser-side proxy auth/CORS complexity during migration.
 
-## 2) Current state snapshot
+## 2) If You Already Minted A Tool Token (Start Here)
 
-Current Alt-text Generator behavior (from plugin repo scan):
-1. Plugin calls Gemini endpoint directly: `https://generativelanguage.googleapis.com/...`.
-2. Plugin persists Gemini API key in `figma.clientStorage` (`geminiApiKey`).
-3. Plugin model defaults to `gemini-2.5-flash`.
+Use this first for local verification before plugin integration:
 
-## 3) Target state
+```bash
+export BASE_URL="https://proxy.example.com"
+export TOOL_TOKEN="tt.<id>.<secret>"
 
-Target behavior after migration:
-1. Backend relay calls proxy `POST /proxy/v1/responses`.
-2. Plugin calls backend relay endpoint only.
-3. Backend relay reads `OPENAI_BASE_URL` and `OPENAI_API_KEY` from server-side secrets.
+scripts/smoke-proxy.sh "$BASE_URL" "$TOOL_TOKEN" "gpt-4.1-mini"
+```
 
-## 4) One-time proxy onboarding commands
+Success output must include:
+1. `models_check=passed`
+2. `responses_check=passed`
+3. `smoke_status=passed`
 
-Set required variables:
+If this fails, fix proxy config/token first. Do not start plugin integration until smoke passes.
+
+## 3) One-Time Bootstrap (Only If You Need New Project/Token)
+
+Prereqs:
+1. Use HTTPS base URL for admin script flow (admin cookie is `Secure`).
+2. Admin email must be in `ADMIN_EMAIL_ALLOWLIST`.
 
 ```bash
 export BASE_URL="https://proxy.example.com"
@@ -46,13 +53,9 @@ export TOOL_SLUG="alt-text-generator-relay"
 export TOOL_MODE="server"
 ```
 
-Admin auth:
-
 ```bash
 scripts/admin-auth.sh "$BASE_URL" "$COOKIE_JAR"
 ```
-
-Project + key + tool + token bootstrap:
 
 ```bash
 scripts/onboard-server-tool.sh \
@@ -68,31 +71,81 @@ scripts/onboard-server-tool.sh \
   --tool-mode "$TOOL_MODE"
 ```
 
-Save command output. You need:
+Save these outputs securely:
 1. `project_id`
 2. `tool_id`
-3. `tool_token`
+3. `tool_token` (shown once)
 4. `token_expires_at`
 
-Smoke check with new token:
+Then run smoke test from section 2.
+
+## 4) Relay Integration Contract (What The Other Codex Thread Should Build)
+
+Relay environment variables:
 
 ```bash
-scripts/smoke-proxy.sh "$BASE_URL" "<tool_token>" "gpt-4.1-mini"
+OPENAI_BASE_URL=https://<proxy-host>/proxy/v1
+OPENAI_API_KEY=tt.<id>.<secret>
 ```
 
-## 5) Store outputs in SSM
+Rules:
+1. `OPENAI_API_KEY` is the proxy tool token, not a raw OpenAI key.
+2. Relay keeps this token server-side only.
+3. Plugin sends generation requests to relay only.
+4. Relay forwards one request to `POST /responses` per plugin action.
 
-Store proxy config values as secure parameters:
+Minimal relay request shape (pass-through to proxy):
+
+```json
+{
+  "model": "gpt-4.1-mini",
+  "input": [
+    {
+      "role": "user",
+      "content": [
+        { "type": "input_text", "text": "Write concise alt text in plain English." },
+        { "type": "input_image", "image_url": "data:image/png;base64,..." }
+      ]
+    }
+  ]
+}
+```
+
+## 5) Plugin Migration Scope
+
+Required changes:
+1. Remove direct Gemini API calls.
+2. Remove stored provider key behavior from plugin state/client storage.
+3. Call relay endpoint for alt-text generation.
+4. Keep current UX for loading/success/failure.
+
+Explicitly out of scope for this migration:
+1. Queues, retries, caching, or background workers.
+2. Multi-provider switching.
+3. Plugin-side long-lived token handling.
+
+## 6) Error Handling Contract
+
+Relay should pass clear failures back to plugin:
+1. `401 unauthorized`: relay token invalid/expired.
+2. `403 forbidden` with `No active API key for project`: project key missing.
+3. `403 token_cap_exceeded`: daily cap reached.
+4. `429 rate_limit_exceeded`: RPM cap reached; retry after ~60s.
+5. `502 upstream_error`: OpenAI upstream failed (include status/details in relay logs/response metadata).
+
+## 7) Secret Storage (Deployment)
+
+Store proxy connection values in secret manager (example: AWS SSM):
 
 ```bash
 export PARAM_BASE="/alt-text-generator/prod"
-export TOOL_TOKEN="<tool_token>"
+export TOOL_TOKEN="tt.<id>.<secret>"
 
 aws ssm put-parameter \
   --name "$PARAM_BASE/OPENAI_BASE_URL" \
   --type "SecureString" \
   --overwrite \
-  --value "$BASE_URL/proxy/v1"
+  --value "https://proxy.example.com/proxy/v1"
 
 aws ssm put-parameter \
   --name "$PARAM_BASE/OPENAI_API_KEY" \
@@ -101,46 +154,10 @@ aws ssm put-parameter \
   --value "$TOOL_TOKEN"
 ```
 
-## 6) Backend relay config contract
+## 8) Definition Of Done
 
-Backend relay must use:
-
-```bash
-OPENAI_BASE_URL=https://<proxy>/proxy/v1
-OPENAI_API_KEY=<tool_token>
-```
-
-Contract notes:
-1. `OPENAI_API_KEY` is the proxy tool token (`tt.<id>.<secret>`), not a raw OpenAI key.
-2. Relay can use OpenAI SDK with base URL override, or direct `fetch`.
-3. Relay should return user-actionable errors when proxy returns `401`, `403`, or `429`.
-
-## 7) Gemini -> proxy migration checklist (docs-level tasks)
-
-1. Remove user-pasted provider key dependency from plugin UX.
-2. Route generation requests through backend relay.
-3. Keep functional parity for output contract and failure messaging.
-
-Recommended execution order:
-1. Add relay endpoint that accepts image/context payload from plugin.
-2. Wire relay endpoint to proxy `POST /proxy/v1/responses`.
-3. Update plugin to call relay instead of Gemini direct endpoint.
-4. Remove Gemini key validation/storage UI states from plugin.
-5. QA output format and node write-back behavior remains stable.
-
-## 8) Acceptance checklist
-
-Accept migration only when all pass:
-1. `GET /proxy/v1/models` check passes via `scripts/smoke-proxy.sh`.
-2. `POST /proxy/v1/responses` check passes via `scripts/smoke-proxy.sh`.
-3. Plugin still writes alt text outputs through backend path.
-4. Existing skip/failure handling remains understandable for designers.
-5. Proxy project caps and auth enforcement are active in runtime.
-
-## 9) Security checklist
-
-1. No provider keys in plugin UI/client storage.
-2. No proxy token in plugin bundle.
-3. No proxy token committed to repo config files.
-4. Token rotation runbook tested before go-live.
-5. Old tokens revoked only after new token deployment is confirmed healthy.
+Migration is complete only when:
+1. `scripts/smoke-proxy.sh` passes with the live token.
+2. Plugin generates alt text through relay -> proxy path.
+3. No provider keys or proxy tokens are stored client-side.
+4. Old token is revoked only after new token is deployed and verified.

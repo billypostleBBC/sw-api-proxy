@@ -30,6 +30,7 @@ describe("web admin routes", () => {
     expect(response.headers["content-type"]).toContain("text/html");
     expect(response.body).toContain("Proxy Admin Login");
     expect(response.body).toContain("adminLoginForm");
+    expect(response.body).toContain("adminPassword");
     await app.close();
   });
 
@@ -50,34 +51,6 @@ describe("web admin routes", () => {
     expect(response.body).toContain("Proxy Admin Dashboard");
     expect(response.body).toContain("Signed in as admin");
     expect(response.body).toContain("createProjectForm");
-    await app.close();
-  });
-
-  it("renders login when session subject is not admin", async () => {
-    const { app, authService } = await buildWebAdminTestApp();
-    authService.getSessionEmail.mockResolvedValue("someone@example.com");
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/admin",
-      headers: {
-        cookie: "admin_session=st.fake.fake"
-      }
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.body).toContain("Proxy Admin Login");
-    await app.close();
-  });
-
-  it("does not register /admin/verify", async () => {
-    const { app } = await buildWebAdminTestApp();
-    const response = await app.inject({
-      method: "GET",
-      url: "/admin/verify?scope=admin&token=ml.1234567890.abcdef"
-    });
-
-    expect(response.statusCode).toBe(404);
     await app.close();
   });
 

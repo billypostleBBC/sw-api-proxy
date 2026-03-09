@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { AuthService } from "../auth/service.js";
 
 const errorMessages: Record<string, string> = {
+  invalid_credentials: "Invalid admin credentials.",
   session_expired: "Your admin session has expired. Please sign in again.",
   auth_failed: "Invalid admin credentials.",
   signed_out: "You have been signed out."
@@ -53,13 +54,17 @@ function loginPageHtml(errorKey?: string): string {
     <div class="row justify-content-center">
       <div class="col-md-8 col-lg-6">
         <h1 class="h3 mb-3">Proxy Admin Login</h1>
-        <p class="text-muted">Sign in with the admin password.</p>
+        <p class="text-muted">Sign in with your allowlisted admin email and shared password.</p>
         ${renderErrorBanner(errorKey)}
         <div class="card shadow-sm">
           <div class="card-body">
             <form id="adminLoginForm" class="vstack gap-3">
               <div>
                 <label for="adminPassword" class="form-label">Admin password</label>
+                <input id="adminPassword" name="password" type="password" class="form-control" required />
+              </div>
+              <div>
+                <label for="adminPassword" class="form-label">Password</label>
                 <input id="adminPassword" name="password" type="password" class="form-control" required />
               </div>
               <button id="loginSubmit" type="submit" class="btn btn-primary">Sign in</button>
@@ -94,10 +99,12 @@ function loginPageHtml(errorKey?: string): string {
         submitButton.disabled = true;
       }
 
+      var emailInput = document.getElementById("adminEmail");
+      var email = emailInput && "value" in emailInput ? String(emailInput.value || "").trim() : "";
       var passwordInput = document.getElementById("adminPassword");
       var password = passwordInput && "value" in passwordInput ? String(passwordInput.value || "") : "";
-      if (!password) {
-        showStatus("danger", "Admin password is required.");
+      if (!email || !password) {
+        showStatus("danger", "Admin email and password are required.");
         if (submitButton) submitButton.disabled = false;
         return;
       }
@@ -107,12 +114,12 @@ function loginPageHtml(errorKey?: string): string {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ password: password })
+          body: JSON.stringify({ email: email, password: password })
         });
 
         if (response.status !== 200) {
           var text = await response.text();
-          var message = "Failed to sign in.";
+          var message = "Login failed.";
           if (text) {
             try {
               var parsed = JSON.parse(text);
@@ -124,10 +131,9 @@ function loginPageHtml(errorKey?: string): string {
           throw new Error(message);
         }
 
-        showStatus("success", "Signed in.");
         window.location.href = "/admin";
       } catch (error) {
-        showStatus("danger", error instanceof Error ? error.message : "Failed to sign in.");
+        showStatus("danger", error instanceof Error ? error.message : "Login failed.");
       } finally {
         if (submitButton) {
           submitButton.disabled = false;

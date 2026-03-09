@@ -4,8 +4,8 @@ MVP TypeScript service for securely proxying OpenAI requests to internal tools.
 
 ## Features
 - KMS-encrypted OpenAI key storage per project.
-- Admin auth via password login and admin session cookies.
-- Client ticket issuance from tool bearer tokens.
+- Admin auth via allowlisted email + shared password.
+- Tool-token-backed short-lived client ticket issuance.
 - Tool auth via long-lived hashed tokens.
 - Proxy endpoints:
   - `POST /proxy/v1/responses`
@@ -30,6 +30,7 @@ On startup, DB migrations run automatically.
 
 ## How to use
 - Step-by-step setup and integration guide: `docs/how-to-use.md`
+- Admin dashboard guide (web UI): `docs/admin-dashboard.md`
 - Repeatable onboarding template for any tool: `docs/tool-onboarding-template.md`
 - Alt-text Generator migration runbook: `docs/alt-text-generator-onboarding.md`
 - Key provisioning and rotation guide: `docs/proxy-key-provisioning.md`
@@ -37,7 +38,6 @@ On startup, DB migrations run automatically.
 ## Core endpoints
 ### Admin auth
 - `POST /admin/auth/login`
-- `POST /admin/logout`
 
 ### Admin management
 - `POST /admin/projects`
@@ -47,7 +47,7 @@ On startup, DB migrations run automatically.
 - `POST /admin/tools/:toolId/tokens/:tokenId/revoke`
 - `GET /admin/usage`
 
-### Client auth
+### Ticket auth
 - `POST /auth/client-ticket`
 
 ### Proxy

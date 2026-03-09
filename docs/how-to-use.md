@@ -7,17 +7,17 @@ This guide covers two tasks:
 ## Focused runbooks
 
 Use these when you need a narrower operational guide:
-1. Repeatable template for onboarding any tool: `tool-onboarding-template.md`
-2. Alt-text Generator migration runbook: `alt-text-generator-onboarding.md`
-3. Key provisioning + rotation SOP: `proxy-key-provisioning.md`
+1. Admin dashboard (web UI) guide: `admin-dashboard.md`
+2. Repeatable template for onboarding any tool: `tool-onboarding-template.md`
+3. Alt-text Generator migration runbook: `alt-text-generator-onboarding.md`
+4. Key provisioning + rotation SOP: `proxy-key-provisioning.md`
 
 ## Prerequisites
 
 1. Proxy is running and reachable over HTTPS (required for session cookies).
-2. `ADMIN_PASSWORD_HASH` is configured.
-3. You know the raw admin password that matches `ADMIN_PASSWORD_HASH`.
-4. AWS KMS is configured for this environment.
-5. You know the proxy base URL.
+2. Your admin email is in `ADMIN_EMAIL_ALLOWLIST`.
+3. AWS KMS is configured for this environment.
+4. You know the proxy base URL.
 
 ```bash
 export BASE_URL="https://proxy.example.com"
@@ -26,11 +26,11 @@ export BASE_URL="https://proxy.example.com"
 ## Step 1: Sign In As Admin (Password)
 
 ```bash
-export ADMIN_PASSWORD="replace-with-admin-password"
+export ADMIN_PASSWORD="replace-with-your-admin-password"
 
 curl -i -c admin.cookies -X POST "$BASE_URL/admin/auth/login" \
   -H "Content-Type: application/json" \
-  -d "{\"password\":\"$ADMIN_PASSWORD\"}"
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}"
 ```
 
 Expected response: `{"ok":true}`
@@ -165,15 +165,15 @@ Supported proxy endpoints in MVP:
 
 ## Step 6: Browser Tools (Short-Lived Client Tickets)
 
-Use this flow when the browser calls proxy directly.
+Use this flow when the browser needs a short-lived proxy credential.
 
 Important:
 1. Add the tool origin to `CORS_ALLOWED_ORIGINS`.
-2. Call `/auth/client-ticket` with `Authorization: Bearer tt.<id>.<secret>`.
-3. Do not send a request body to `/auth/client-ticket`.
+2. Mint tickets from your backend, not directly in browser code.
+3. Keep the long-lived tool token server-side only.
 4. Ticket TTL is short (default 5 minutes), so request fresh tickets regularly.
 
-Ticket exchange:
+Mint a client ticket from your backend using the tool token:
 
 ```bash
 curl -s -X POST "$BASE_URL/auth/client-ticket" \
@@ -186,7 +186,24 @@ Response:
 {"ticket":"<jwt>","expiresInMinutes":5}
 ```
 
-Use that ticket as bearer for `/proxy/v1/*`.
+Use ticket as bearer for `/proxy/v1/*` from browser code:
+
+```ts
+const apiBase = "https://proxy.example.com";
+const ticket = await fetch("/api/proxy-ticket").then((res) => res.text());
+
+const responseRes = await fetch(`${apiBase}/proxy/v1/responses`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${ticket}`
+  },
+  body: JSON.stringify({
+    model: "gpt-4.1-mini",
+    input: "Say hello from browser with a short-lived ticket."
+  })
+});
+```
 
 ## Rotation And Revocation
 

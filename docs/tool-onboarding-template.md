@@ -65,7 +65,7 @@ command -v node
 
 ## Admin auth
 
-Sign in and establish admin session cookie:
+Login to admin and store session cookie:
 
 ```bash
 scripts/admin-auth.sh "$BASE_URL"

@@ -29,7 +29,10 @@ fi
 BODY_FILE=$(mktemp)
 trap 'rm -f "$BODY_FILE"' EXIT
 
-LOGIN_PAYLOAD=$(node -e 'const password=process.argv[1];process.stdout.write(JSON.stringify({password}));' "$ADMIN_PASSWORD")
+read -r -s -p "Admin password: " ADMIN_PASSWORD
+echo
+
+LOGIN_PAYLOAD=$(node -e 'const [email,password]=process.argv.slice(1); process.stdout.write(JSON.stringify({email,password}));' "$ADMIN_EMAIL" "$ADMIN_PASSWORD")
 
 LOGIN_STATUS=$(curl -sS -o "$BODY_FILE" -w "%{http_code}" \
   -X POST "$BASE_URL/admin/auth/login" \
@@ -38,7 +41,7 @@ LOGIN_STATUS=$(curl -sS -o "$BODY_FILE" -w "%{http_code}" \
   --data "$LOGIN_PAYLOAD")
 
 if [[ "$LOGIN_STATUS" != "200" ]]; then
-  echo "Failed to log in as admin (HTTP $LOGIN_STATUS)."
+  echo "Failed to login as admin (HTTP $LOGIN_STATUS)."
   cat "$BODY_FILE"
   exit 1
 fi

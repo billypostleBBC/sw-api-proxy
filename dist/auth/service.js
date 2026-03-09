@@ -1,4 +1,4 @@
-import { makeOpaqueToken, parseOpaqueToken, sha256 } from "../utils/crypto.js";
+import { makeOpaqueToken, parseOpaqueToken, safeEqualHex, sha256 } from "../utils/crypto.js";
 const ADMIN_COOKIE = "admin_session";
 const USER_COOKIE = "user_session";
 export class AuthService {
@@ -55,5 +55,8 @@ export class AuthService {
     }
     static hashToken(raw) {
         return sha256(raw);
+    }
+    static verifyPassword(inputPassword, expectedPassword) {
+        return safeEqualHex(sha256(inputPassword), sha256(expectedPassword));
     }
 }

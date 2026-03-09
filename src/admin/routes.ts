@@ -6,7 +6,10 @@ import { AuthService } from "../auth/service.js";
 import type { Repo } from "../db/repo.js";
 import { UsageService } from "../usage/service.js";
 
-const adminLoginSchema = z.object({ password: z.string().min(1) });
+const adminLoginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1)
+});
 const createProjectSchema = z.object({
   slug: z.string().min(1),
   name: z.string().min(1),
@@ -60,19 +63,17 @@ export function registerAdminRoutes(
   app.post("/admin/auth/login", async (request, reply) => {
     const parsed = adminLoginSchema.safeParse(request.body);
     if (!parsed.success) {
-      return sendError(reply, 400, "bad_request", "Invalid password input");
+      return sendError(reply, 400, "bad_request", "Invalid login payload", { issues: parsed.error.issues });
     }
 
-    const storedHash = await deps.repo.getAdminPasswordHash("admin");
-    if (!storedHash) {
-      return sendError(reply, 401, "unauthorized", "Invalid admin credentials");
-    }
-    const passwordHash = sha256(parsed.data.password);
-    if (!safeEqualHex(passwordHash, storedHash)) {
+    const email = parsed.data.email.toLowerCase();
+    const isAllowlisted = app.env.adminEmailAllowlist.has(email);
+    const isPasswordValid = AuthService.verifyPassword(parsed.data.password, app.env.adminPassword);
+    if (!isAllowlisted || !isPasswordValid) {
       return sendError(reply, 401, "unauthorized", "Invalid admin credentials");
     }
 
-    const sessionToken = await deps.authService.createSession("admin", "admin");
+    const sessionToken = await deps.authService.createSession("admin", email);
     AuthService.setSessionCookie(reply, "admin", sessionToken);
     return reply.send({ ok: true });
   });

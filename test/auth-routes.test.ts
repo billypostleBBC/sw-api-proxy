@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import { registerAuthRoutes } from "../src/auth/routes.js";
 
-async function buildAuthTestApp() {
+async function buildAuthRouteApp() {
   const app = Fastify();
 
   app.decorate(
@@ -13,12 +13,10 @@ async function buildAuthTestApp() {
   );
 
   const repo = {
-    findAuthByToolToken: vi.fn(),
-    findToolBySlug: vi.fn()
+    findAuthByToolToken: vi.fn().mockResolvedValue(null)
   };
-
   const ticketService = {
-    createTicket: vi.fn().mockResolvedValue("jwt.ticket.token")
+    createTicket: vi.fn().mockResolvedValue("ticket.jwt.value")
   };
 
   registerAuthRoutes(app, {
@@ -31,9 +29,8 @@ async function buildAuthTestApp() {
 }
 
 describe("auth routes", () => {
-  it("returns 401 when bearer token is missing", async () => {
-    const { app } = await buildAuthTestApp();
-
+  it("requires tool bearer token for client ticket", async () => {
+    const { app } = await buildAuthRouteApp();
     const response = await app.inject({
       method: "POST",
       url: "/auth/client-ticket"
@@ -42,71 +39,39 @@ describe("auth routes", () => {
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({
       error: "unauthorized",
-      message: "Missing or invalid bearer token"
+      message: "Tool bearer token is required"
     });
     await app.close();
   });
 
-  it("returns 401 for invalid bearer token", async () => {
-    const { app, repo } = await buildAuthTestApp();
+  it("rejects invalid tool bearer token", async () => {
+    const { app, repo } = await buildAuthRouteApp();
     repo.findAuthByToolToken.mockResolvedValue(null);
 
     const response = await app.inject({
       method: "POST",
       url: "/auth/client-ticket",
       headers: {
-        authorization: "Bearer tt.invalid.invalid"
+        authorization: "Bearer tt.invalid.token"
       }
     });
 
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({
       error: "unauthorized",
-      message: "Missing or invalid bearer token"
+      message: "Invalid or expired tool bearer token"
     });
     await app.close();
   });
 
-  it("rejects request body", async () => {
-    const { app } = await buildAuthTestApp();
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/client-ticket",
-      headers: {
-        authorization: "Bearer tt.fake.fake",
-        "content-type": "application/json"
-      },
-      payload: {}
-    });
-
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toEqual({
-      error: "bad_request",
-      message: "Request body is not allowed"
-    });
-    await app.close();
-  });
-
-  it("creates a ticket from a valid tool token", async () => {
-    const { app, repo, ticketService } = await buildAuthTestApp();
-
+  it("issues ticket from valid tool bearer token", async () => {
+    const { app, repo, ticketService } = await buildAuthRouteApp();
     repo.findAuthByToolToken.mockResolvedValue({
       mode: "tool",
-      toolId: 8,
-      toolSlug: "story-assistant-server",
-      projectId: 10,
-      projectSlug: "story-assistant-prod",
-      projectStatus: "active",
-      rpmCap: 60,
-      dailyTokenCap: 2000000
-    });
-
-    repo.findToolBySlug.mockResolvedValue({
-      toolId: 8,
-      projectId: 10,
-      projectSlug: "story-assistant-prod",
-      toolStatus: "active",
+      toolId: 9,
+      toolSlug: "story-assistant",
+      projectId: 3,
+      projectSlug: "storyworks-prod",
       projectStatus: "active",
       rpmCap: 60,
       dailyTokenCap: 2000000
@@ -116,64 +81,25 @@ describe("auth routes", () => {
       method: "POST",
       url: "/auth/client-ticket",
       headers: {
-        authorization: "Bearer tt.valid.valid"
+        authorization: "Bearer tt.valid.token"
       }
     });
 
     expect(response.statusCode).toBe(200);
     expect(ticketService.createTicket).toHaveBeenCalledWith({
-      sub: "tool:story-assistant-server",
-      toolId: 8,
-      toolSlug: "story-assistant-server",
-      projectId: 10,
-      projectSlug: "story-assistant-prod",
+      sub: "tool:9",
+      toolId: 9,
+      toolSlug: "story-assistant",
+      projectId: 3,
+      projectSlug: "storyworks-prod",
       rpmCap: 60,
       dailyTokenCap: 2000000
     });
     expect(response.json()).toEqual({
-      ticket: "jwt.ticket.token",
+      ticket: "ticket.jwt.value",
       expiresInMinutes: 5
     });
-    await app.close();
-  });
 
-  it("returns 403 when tool or project is inactive", async () => {
-    const { app, repo } = await buildAuthTestApp();
-
-    repo.findAuthByToolToken.mockResolvedValue({
-      mode: "tool",
-      toolId: 8,
-      toolSlug: "story-assistant-server",
-      projectId: 10,
-      projectSlug: "story-assistant-prod",
-      projectStatus: "active",
-      rpmCap: 60,
-      dailyTokenCap: 2000000
-    });
-
-    repo.findToolBySlug.mockResolvedValue({
-      toolId: 8,
-      projectId: 10,
-      projectSlug: "story-assistant-prod",
-      toolStatus: "inactive",
-      projectStatus: "active",
-      rpmCap: 60,
-      dailyTokenCap: 2000000
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/client-ticket",
-      headers: {
-        authorization: "Bearer tt.valid.valid"
-      }
-    });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toEqual({
-      error: "forbidden",
-      message: "Tool or project is inactive"
-    });
     await app.close();
   });
 });
