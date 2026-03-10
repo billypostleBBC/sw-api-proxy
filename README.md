@@ -27,6 +27,11 @@ On startup, DB migrations run automatically.
 - Build: `npm run build`
 - Tests: `npm test`
 
+## Dependency installs
+- Dependencies are not committed.
+- Local development: run `npm install`.
+- CI/clean installs: use `npm ci` to install exactly from `package-lock.json` and fail if lockfile and manifest drift.
+
 ## How to use
 - Step-by-step setup and integration guide: `docs/how-to-use.md`
 - Repeatable onboarding template for any tool: `docs/tool-onboarding-template.md`
