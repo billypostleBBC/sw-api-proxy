@@ -34,6 +34,7 @@ Set required variables:
 ```bash
 export BASE_URL="https://proxy.example.com"
 export ADMIN_EMAIL="admin@bbc.co.uk"
+export ADMIN_PASSWORD="<shared-admin-password>"
 export COOKIE_JAR="/tmp/proxy-api-admin.cookie"
 
 export PROJECT_SLUG="alt-text-generator-prod"

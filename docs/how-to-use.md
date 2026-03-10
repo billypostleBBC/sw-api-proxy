@@ -15,33 +15,21 @@ Use these when you need a narrower operational guide:
 
 1. Proxy is running and reachable over HTTPS (required for session cookies).
 2. Your admin email is in `ADMIN_EMAIL_ALLOWLIST`.
-3. AWS KMS + SES are configured for this environment.
+3. You have the shared `ADMIN_PASSWORD` value for this environment.
 4. You know the proxy base URL.
 
 ```bash
 export BASE_URL="https://proxy.example.com"
 export ADMIN_EMAIL="admin1@bbc.co.uk"
+export ADMIN_PASSWORD="<shared-admin-password>"
 ```
 
-## Step 1: Sign In As Admin (Magic Link)
-
-1. Request an admin magic link:
+## Step 1: Sign In As Admin (Email + Password)
 
 ```bash
-curl -i -X POST "$BASE_URL/admin/auth/magic-link/request" \
+curl -i -c admin.cookies -X POST "$BASE_URL/admin/auth/login" \
   -H "Content-Type: application/json" \
-  -d "{\"email\":\"$ADMIN_EMAIL\"}"
-```
-
-2. Open the email and copy the `token` query param from the link.
-3. Verify the token and store the admin session cookie:
-
-```bash
-export ADMIN_MAGIC_TOKEN="ml.***"
-
-curl -i -c admin.cookies -X POST "$BASE_URL/admin/auth/magic-link/verify" \
-  -H "Content-Type: application/json" \
-  -d "{\"token\":\"$ADMIN_MAGIC_TOKEN\"}"
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}"
 ```
 
 Expected response: `{"ok":true}`
@@ -182,80 +170,6 @@ Supported proxy endpoints in MVP:
 2. `POST /proxy/v1/embeddings`
 3. `GET /proxy/v1/models`
 
-## Step 6: Browser Tools (Short-Lived Client Tickets)
-
-Use this flow when the browser calls proxy directly.
-
-Important:
-1. Add the tool origin to `CORS_ALLOWED_ORIGINS`.
-2. Browser must include credentials for `/auth/client-ticket`.
-3. Ticket TTL is short (default 5 minutes), so request fresh tickets regularly.
-4. Session cookie is `SameSite=Lax`, so browser ticket exchange should be same-site with the proxy domain (for example `*.bbc.co.uk`).
-
-1. Create tool with `mode` set to `browser` or `both`.
-2. Start user login:
-
-```bash
-export USER_EMAIL="someone@bbc.co.uk"
-
-curl -i -X POST "$BASE_URL/auth/magic-link/request" \
-  -H "Content-Type: application/json" \
-  -d "{\"email\":\"$USER_EMAIL\"}"
-```
-
-3. Copy `token` from the magic-link URL, then verify it to set `user_session` cookie:
-
-```bash
-export USER_MAGIC_TOKEN="ml.***"
-
-curl -i -c user.cookies -X POST "$BASE_URL/auth/magic-link/verify" \
-  -H "Content-Type: application/json" \
-  -d "{\"token\":\"$USER_MAGIC_TOKEN\"}"
-```
-
-4. Exchange session for ticket:
-
-```bash
-curl -s -b user.cookies -X POST "$BASE_URL/auth/client-ticket" \
-  -H "Content-Type: application/json" \
-  -d '{"toolSlug":"storyworks-ai-assistant"}'
-```
-
-Response:
-
-```json
-{"ticket":"<jwt>","expiresInMinutes":5}
-```
-
-5. Use ticket as bearer for `/proxy/v1/*`.
-
-Browser example:
-
-```ts
-const apiBase = "https://proxy.example.com";
-
-const ticketRes = await fetch(`${apiBase}/auth/client-ticket`, {
-  method: "POST",
-  credentials: "include",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ toolSlug: "storyworks-ai-assistant" })
-});
-
-const { ticket } = await ticketRes.json();
-
-const responseRes = await fetch(`${apiBase}/proxy/v1/responses`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${ticket}`
-  },
-  body: JSON.stringify({
-    model: "gpt-4.1-mini",
-    input: "Say hello from a browser-authenticated client."
-  })
-});
-```
-
 ## Rotation And Revocation
 
 1. Rotate OpenAI key: call `POST /admin/projects/:projectId/keys` again.
@@ -274,7 +188,7 @@ curl -i -b admin.cookies -X POST "$BASE_URL/admin/tools/$TOOL_ID/tokens/$TOKEN_I
 
 ## Quick Failure Checklist
 
-1. `401 Missing or invalid bearer token`: wrong/expired tool token or ticket.
+1. `401 Missing or invalid bearer token`: wrong/expired tool token.
 2. `403 No active API key for project`: key not set for that project.
 3. `403 token_cap_exceeded`: project daily cap reached.
 4. `429 rate_limit_exceeded`: project RPM cap reached.

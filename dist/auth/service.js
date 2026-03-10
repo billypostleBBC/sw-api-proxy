@@ -1,33 +1,11 @@
 import { makeOpaqueToken, parseOpaqueToken, sha256 } from "../utils/crypto.js";
 const ADMIN_COOKIE = "admin_session";
-const USER_COOKIE = "user_session";
 export class AuthService {
     repo;
     sessionTtlHours;
-    magicLinkTtlMinutes;
-    constructor(repo, sessionTtlHours, magicLinkTtlMinutes) {
+    constructor(repo, sessionTtlHours) {
         this.repo = repo;
         this.sessionTtlHours = sessionTtlHours;
-        this.magicLinkTtlMinutes = magicLinkTtlMinutes;
-    }
-    async createMagicLink(scope, email) {
-        const opaque = makeOpaqueToken("ml");
-        const expiresAt = new Date(Date.now() + this.magicLinkTtlMinutes * 60_000);
-        await this.repo.createMagicLink({
-            id: opaque.id,
-            email,
-            tokenHash: opaque.secretHash,
-            scope,
-            expiresAt
-        });
-        return { token: opaque.token, expiresAt };
-    }
-    async consumeMagicLink(scope, token) {
-        const parsed = parseOpaqueToken(token, "ml");
-        if (!parsed) {
-            return null;
-        }
-        return this.repo.consumeMagicLink({ id: parsed.id, secret: parsed.secret, scope });
     }
     async createSession(scope, subjectEmail) {
         const opaque = makeOpaqueToken("st");
@@ -50,7 +28,7 @@ export class AuthService {
         return session?.subjectEmail ?? null;
     }
     static setSessionCookie(reply, scope, token) {
-        const name = scope === "admin" ? ADMIN_COOKIE : USER_COOKIE;
+        const name = scope === "admin" ? ADMIN_COOKIE : "user_session";
         reply.setCookie(name, token, {
             httpOnly: true,
             secure: true,
@@ -61,7 +39,7 @@ export class AuthService {
     static getSessionFromCookie(request, scope) {
         return scope === "admin"
             ? request.cookies[ADMIN_COOKIE]
-            : request.cookies[USER_COOKIE];
+            : request.cookies["user_session"];
     }
     static makeToolToken() {
         const opaque = makeOpaqueToken("tt");

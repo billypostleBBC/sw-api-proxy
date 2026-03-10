@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { sendError } from "../utils/http.js";
 import { AuthService } from "../auth/service.js";
-const requestMagicLinkSchema = z.object({ email: z.string().email() });
-const verifyMagicLinkSchema = z.object({ token: z.string().min(10) });
+import { safeEqualHex, sha256 } from "../utils/crypto.js";
+const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) });
 const createProjectSchema = z.object({
     slug: z.string().min(1),
     name: z.string().min(1),
@@ -24,6 +24,40 @@ const toolsQuerySchema = z.object({
     slug: z.string().min(1).optional(),
     projectId: z.coerce.number().int().positive().optional()
 });
+const LOGIN_WINDOW_MS = 60_000;
+const LOGIN_MAX_ATTEMPTS = 5;
+const loginFailuresByIp = new Map();
+function normalizeIp(ip) {
+    const trimmed = (ip ?? "").trim();
+    return trimmed || "unknown";
+}
+function getLoginRateLimitState(ip, nowMs) {
+    const existing = loginFailuresByIp.get(ip);
+    if (!existing) {
+        return { limited: false, retryAfterSeconds: 0 };
+    }
+    if (nowMs - existing.windowStartMs >= LOGIN_WINDOW_MS) {
+        loginFailuresByIp.delete(ip);
+        return { limited: false, retryAfterSeconds: 0 };
+    }
+    if (existing.count < LOGIN_MAX_ATTEMPTS) {
+        return { limited: false, retryAfterSeconds: 0 };
+    }
+    const retryAfterSeconds = Math.max(1, Math.ceil((existing.windowStartMs + LOGIN_WINDOW_MS - nowMs) / 1000));
+    return { limited: true, retryAfterSeconds };
+}
+function recordLoginFailure(ip, nowMs) {
+    const existing = loginFailuresByIp.get(ip);
+    if (!existing || nowMs - existing.windowStartMs >= LOGIN_WINDOW_MS) {
+        loginFailuresByIp.set(ip, { count: 1, windowStartMs: nowMs });
+        return;
+    }
+    existing.count += 1;
+    loginFailuresByIp.set(ip, existing);
+}
+function clearLoginFailures(ip) {
+    loginFailuresByIp.delete(ip);
+}
 async function requireAdmin(app, request, authService) {
     const token = AuthService.getSessionFromCookie(request, "admin");
     if (!token) {
@@ -36,31 +70,32 @@ async function requireAdmin(app, request, authService) {
     return app.env.adminEmailAllowlist.has(email.toLowerCase()) ? email : null;
 }
 export function registerAdminRoutes(app, deps) {
-    app.post("/admin/auth/magic-link/request", async (request, reply) => {
-        const parsed = requestMagicLinkSchema.safeParse(request.body);
+    app.post("/admin/auth/login", async (request, reply) => {
+        const ip = normalizeIp(request.ip);
+        const nowMs = Date.now();
+        const rateLimit = getLoginRateLimitState(ip, nowMs);
+        if (rateLimit.limited) {
+            return sendError(reply, 429, "rate_limit_exceeded", "Too many login attempts", {
+                retryAfterSeconds: rateLimit.retryAfterSeconds
+            });
+        }
+        const parsed = loginSchema.safeParse(request.body);
         if (!parsed.success) {
-            return reply.code(204).send();
+            recordLoginFailure(ip, nowMs);
+            return sendError(reply, 400, "bad_request", "Invalid login payload", { issues: parsed.error.issues });
         }
-        const email = parsed.data.email.toLowerCase();
-        if (!app.env.adminEmailAllowlist.has(email)) {
-            return reply.code(204).send();
+        const email = parsed.data.email.toLowerCase().trim();
+        const emailAllowed = app.env.adminEmailAllowlist.has(email);
+        const expectedPasswordHash = sha256(app.env.adminPassword);
+        const suppliedPasswordHash = sha256(parsed.data.password);
+        const passwordValid = safeEqualHex(expectedPasswordHash, suppliedPasswordHash);
+        if (!emailAllowed || !passwordValid) {
+            recordLoginFailure(ip, nowMs);
+            return sendError(reply, 401, "unauthorized", "Invalid admin credentials");
         }
-        const linkToken = await deps.authService.createMagicLink("admin", email);
-        const link = `${deps.appBaseUrl}/admin/verify?scope=admin&token=${encodeURIComponent(linkToken.token)}`;
-        await app.emailService.sendMagicLink(email, link, "admin");
-        return reply.code(204).send();
-    });
-    app.post("/admin/auth/magic-link/verify", async (request, reply) => {
-        const parsed = verifyMagicLinkSchema.safeParse(request.body);
-        if (!parsed.success) {
-            return sendError(reply, 400, "bad_request", "Invalid token input");
-        }
-        const consumed = await deps.authService.consumeMagicLink("admin", parsed.data.token);
-        if (!consumed || !app.env.adminEmailAllowlist.has(consumed.email.toLowerCase())) {
-            return sendError(reply, 401, "unauthorized", "Magic link is invalid or expired");
-        }
-        const sessionToken = await deps.authService.createSession("admin", consumed.email);
+        const sessionToken = await deps.authService.createSession("admin", email);
         AuthService.setSessionCookie(reply, "admin", sessionToken);
+        clearLoginFailures(ip);
         return reply.send({ ok: true });
     });
     app.post("/admin/projects", async (request, reply) => {

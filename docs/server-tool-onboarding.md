@@ -12,6 +12,7 @@ Create one project per product and environment:
 
 - A running proxy base URL (example: `https://proxy.example.com`)
 - Admin email allowlisted in `ADMIN_EMAIL_ALLOWLIST`
+- Shared `ADMIN_PASSWORD` for the environment
 - OpenAI key for the target project/environment
 - `bash`, `curl`, and `node` available locally
 
@@ -21,7 +22,7 @@ Create one project per product and environment:
 scripts/admin-auth.sh https://proxy.example.com admin@bbc.co.uk
 ```
 
-This creates a cookie jar (default: `/tmp/proxy-api-admin.cookie`) after you paste the emailed magic-link token.
+This creates a cookie jar (default: `/tmp/proxy-api-admin.cookie`) after password login succeeds.
 
 ## Step 2: Create/find project, set key, create/find tool, mint token
 

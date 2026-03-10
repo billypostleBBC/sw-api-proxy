@@ -19,6 +19,7 @@ Set inputs:
 ```bash
 export BASE_URL="https://proxy.example.com"
 export ADMIN_EMAIL="admin@bbc.co.uk"
+export ADMIN_PASSWORD="<shared-admin-password>"
 export COOKIE_JAR="/tmp/proxy-api-admin.cookie"
 
 export PROJECT_SLUG="alt-text-generator-prod"
@@ -62,22 +63,12 @@ scripts/smoke-proxy.sh "$BASE_URL" "<tool_token>" "gpt-4.1-mini"
 
 Use this if scripts cannot run in your environment.
 
-Request admin magic link:
+Sign in as admin and store cookie:
 
 ```bash
-curl -i -X POST "$BASE_URL/admin/auth/magic-link/request" \
+curl -i -c admin.cookies -X POST "$BASE_URL/admin/auth/login" \
   -H "Content-Type: application/json" \
-  -d "{\"email\":\"$ADMIN_EMAIL\"}"
-```
-
-Verify admin magic link and store cookie:
-
-```bash
-export ADMIN_MAGIC_TOKEN="ml.***"
-
-curl -i -c admin.cookies -X POST "$BASE_URL/admin/auth/magic-link/verify" \
-  -H "Content-Type: application/json" \
-  -d "{\"token\":\"$ADMIN_MAGIC_TOKEN\"}"
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}"
 ```
 
 Find project by slug (or create if not found):

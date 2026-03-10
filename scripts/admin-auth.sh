@@ -15,32 +15,28 @@ fi
 BASE_URL="$1"
 ADMIN_EMAIL="$2"
 COOKIE_JAR="${3:-${TMPDIR:-/tmp}/proxy-api-admin.cookie}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
+
+if [[ -z "$ADMIN_PASSWORD" ]]; then
+  read -r -s -p "Admin password: " ADMIN_PASSWORD
+  echo
+fi
+[[ -n "$ADMIN_PASSWORD" ]] || {
+  echo "Admin password is required."
+  exit 1
+}
 
 BODY_FILE=$(mktemp)
 trap 'rm -f "$BODY_FILE"' EXIT
 
-REQ_STATUS=$(curl -sS -o "$BODY_FILE" -w "%{http_code}" \
-  -X POST "$BASE_URL/admin/auth/magic-link/request" \
-  -H "Content-Type: application/json" \
-  --data "{\"email\":\"$ADMIN_EMAIL\"}")
-
-if [[ "$REQ_STATUS" != "204" ]]; then
-  echo "Failed to request admin magic link (HTTP $REQ_STATUS)."
-  cat "$BODY_FILE"
-  exit 1
-fi
-
-echo "Magic link requested for $ADMIN_EMAIL."
-read -r -p "Paste magic-link token from email: " MAGIC_TOKEN
-
-VERIFY_STATUS=$(curl -sS -o "$BODY_FILE" -w "%{http_code}" \
-  -X POST "$BASE_URL/admin/auth/magic-link/verify" \
+LOGIN_STATUS=$(curl -sS -o "$BODY_FILE" -w "%{http_code}" \
+  -X POST "$BASE_URL/admin/auth/login" \
   -H "Content-Type: application/json" \
   -c "$COOKIE_JAR" \
-  --data "{\"token\":\"$MAGIC_TOKEN\"}")
+  --data "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")
 
-if [[ "$VERIFY_STATUS" != "200" ]]; then
-  echo "Failed to verify admin magic link (HTTP $VERIFY_STATUS)."
+if [[ "$LOGIN_STATUS" != "200" ]]; then
+  echo "Failed to sign in as admin (HTTP $LOGIN_STATUS)."
   cat "$BODY_FILE"
   exit 1
 fi

@@ -137,29 +137,6 @@ export class Repo {
             dailyTokenCap: Number(token.daily_token_cap)
         };
     }
-    async createMagicLink(input) {
-        await this.pool.query(`INSERT INTO magic_links (id, email, token_hash, scope, expires_at)
-       VALUES ($1, $2, $3, $4, $5)`, [input.id, input.email, input.tokenHash, input.scope, input.expiresAt]);
-    }
-    async consumeMagicLink(input) {
-        const result = await this.pool.query(`SELECT email, token_hash, consumed_at, expires_at
-       FROM magic_links
-       WHERE id = $1 AND scope = $2`, [input.id, input.scope]);
-        const row = result.rows[0];
-        if (!row || row.consumed_at || row.expires_at <= new Date()) {
-            return null;
-        }
-        if (!safeEqualHex(sha256(input.secret), row.token_hash)) {
-            return null;
-        }
-        await this.pool.query(`UPDATE magic_links SET consumed_at = now() WHERE id = $1`, [input.id]);
-        return { email: row.email };
-    }
-    async upsertUser(email) {
-        await this.pool.query(`INSERT INTO users (email, status)
-       VALUES ($1, 'active')
-       ON CONFLICT (email) DO UPDATE SET status = 'active', updated_at = now()`, [email]);
-    }
     async createSession(input) {
         await this.pool.query(`INSERT INTO sessions (id, token_hash, subject_email, scope, expires_at)
        VALUES ($1, $2, $3, $4, $5)`, [input.id, input.tokenHash, input.subjectEmail, input.scope, input.expiresAt]);

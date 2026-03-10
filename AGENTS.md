@@ -6,9 +6,9 @@ This document defines the operating scope and engineering rules for this reposit
 Treat this file as project law.
 If a request conflicts with this file, update this file first or do not implement the request.
 
-## Repository Snapshot (as of 2026-03-09)
+## Repository Snapshot (as of 2026-03-10)
 TypeScript Fastify service that proxies OpenAI API calls for internal tools with:
-1. Admin + user magic-link auth.
+1. Admin email/password auth with allowlist-gated session cookies.
 2. Project/tool management with per-project limits.
 3. Server-side encrypted OpenAI key storage (AWS KMS).
 4. Usage + audit persistence in Postgres.
@@ -23,9 +23,8 @@ TypeScript Fastify service that proxies OpenAI API calls for internal tools with
    - `POST /proxy/v1/embeddings`
    - `GET /proxy/v1/models`
 4. Support current auth flows:
-   - Admin magic link: request + verify.
-   - User magic link: request + verify.
-   - User client ticket issuance for tool access.
+   - Admin login: email + shared password.
+   - Admin session cookie enforcement for admin routes.
    - Tool bearer tokens.
 5. Enforce per-project RPM and daily token caps.
 6. Persist operational data in existing tables (`projects`, `tools`, `tool_tokens`, `usage_events`, `audit_logs`, etc.).
@@ -70,8 +69,7 @@ TypeScript Fastify service that proxies OpenAI API calls for internal tools with
 2. AWS deployment assumptions remain:
    - App Runner web service (container image) with HTTPS ingress,
    - RDS Postgres,
-   - KMS for encryption,
-   - SES for magic-link email.
+   - KMS for encryption.
 3. Production runtime secrets source of truth is AWS SSM Parameter Store via App Runner RuntimeEnvironmentSecrets.
 4. Do not introduce infrastructure that is not reflected in `infra/README.md` unless this file is updated first.
 
@@ -91,3 +89,4 @@ Any meaningful requirement change must update this file in the same change set, 
 ### Change Log
 - 2026-02-19: Replaced generic charter with repo-specific project law after full repo scan (Fastify + Postgres + AWS KMS/SES + OpenAI proxy).
 - 2026-03-09: Pivoted deployment model from ECS/ALB to App Runner with SSM-backed runtime secrets; moved ECS artifacts to legacy path.
+- 2026-03-10: Removed SES and magic-link auth/runtime dependencies; switched MVP auth to allowlisted admin email + shared password with session cookies and tool-token proxy access.

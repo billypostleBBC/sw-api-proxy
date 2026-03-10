@@ -5,9 +5,16 @@
 2. App Runner service role ARNs are available:
    - ECR access role
    - Instance runtime role
-3. Required SSM parameters exist for target environment.
+3. Required SSM parameters exist:
+   - `/proxy-api/DATABASE_URL`
+   - `/proxy-api/KMS_KEY_ID`
+   - `/proxy-api/ADMIN_PASSWORD`
+   - `/proxy-api/ADMIN_EMAIL_ALLOWLIST`
+   - `/proxy-api/CORS_ALLOWED_ORIGINS`
 4. VPC connector exists and is approved for target subnets/security groups.
 5. RDS connectivity from connector SG to DB SG/port is in place.
+6. App Runner API access works for this principal in `eu-west-2`.
+7. Confirmed baseline in `eu-west-2`: no existing App Runner service yet.
 
 ## 2) Build and publish
 1. Build image from `infra/Dockerfile`.
@@ -23,7 +30,7 @@
 
 ## 4) Post-deploy smoke checks
 1. `GET /health` returns `200` and `{"ok":true}`.
-2. Admin magic-link request endpoint responds as expected.
+2. Admin login endpoint responds as expected.
 3. `scripts/smoke-proxy.sh <base_url> <tool_token> [model]` passes.
 
 ## 5) Observability checks
@@ -37,7 +44,5 @@
 4. Keep failed tag for investigation; do not reuse mutable tags.
 
 ## 7) Infra decisions to confirm
-1. NAT vs VPC endpoint strategy for VPC egress.
-2. Final subnet IDs/security group IDs/VPC connector ARN.
-3. Final RDS reachability posture and routing assumptions.
-4. Final service domain and `APP_BASE_URL` value.
+1. NAT and/or VPC endpoint strategy for selected `VPC` egress mode.
+2. Final RDS reachability posture (currently discovered as `PubliclyAccessible=true`).

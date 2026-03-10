@@ -31,7 +31,7 @@ export function registerProxyRoutes(
       return sendError(reply, 400, "bad_request", "Invalid responses payload", { issues: parsedBody.error.issues });
     }
 
-    const auth = await resolveProxyAuth(request, app.repo, app.ticketService);
+    const auth = await resolveProxyAuth(request, app.repo);
     if (!auth) {
       return sendError(reply, 401, "unauthorized", "Missing or invalid bearer token");
     }
@@ -103,7 +103,7 @@ export function registerProxyRoutes(
       return sendError(reply, 400, "bad_request", "Invalid embeddings payload", { issues: parsedBody.error.issues });
     }
 
-    const auth = await resolveProxyAuth(request, app.repo, app.ticketService);
+    const auth = await resolveProxyAuth(request, app.repo);
     if (!auth) {
       return sendError(reply, 401, "unauthorized", "Missing or invalid bearer token");
     }
@@ -157,7 +157,7 @@ export function registerProxyRoutes(
   });
 
   app.get("/proxy/v1/models", async (request, reply) => {
-    const auth = await resolveProxyAuth(request, app.repo, app.ticketService);
+    const auth = await resolveProxyAuth(request, app.repo);
     if (!auth) {
       return sendError(reply, 401, "unauthorized", "Missing or invalid bearer token");
     }

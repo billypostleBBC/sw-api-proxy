@@ -252,55 +252,6 @@ export class Repo {
     };
   }
 
-  async createMagicLink(input: {
-    id: string;
-    email: string;
-    tokenHash: string;
-    scope: Scope;
-    expiresAt: Date;
-  }): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO magic_links (id, email, token_hash, scope, expires_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [input.id, input.email, input.tokenHash, input.scope, input.expiresAt]
-    );
-  }
-
-  async consumeMagicLink(input: { id: string; secret: string; scope: Scope }): Promise<{ email: string } | null> {
-    const result = await this.pool.query<{
-      email: string;
-      token_hash: string;
-      consumed_at: Date | null;
-      expires_at: Date;
-    }>(
-      `SELECT email, token_hash, consumed_at, expires_at
-       FROM magic_links
-       WHERE id = $1 AND scope = $2`,
-      [input.id, input.scope]
-    );
-
-    const row = result.rows[0];
-    if (!row || row.consumed_at || row.expires_at <= new Date()) {
-      return null;
-    }
-    if (!safeEqualHex(sha256(input.secret), row.token_hash)) {
-      return null;
-    }
-
-    await this.pool.query(`UPDATE magic_links SET consumed_at = now() WHERE id = $1`, [input.id]);
-
-    return { email: row.email };
-  }
-
-  async upsertUser(email: string): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO users (email, status)
-       VALUES ($1, 'active')
-       ON CONFLICT (email) DO UPDATE SET status = 'active', updated_at = now()`,
-      [email]
-    );
-  }
-
   async createSession(input: {
     id: string;
     tokenHash: string;

@@ -7,34 +7,7 @@ const ADMIN_COOKIE = "admin_session";
 const USER_COOKIE = "user_session";
 
 export class AuthService {
-  constructor(
-    private readonly repo: Repo,
-    private readonly sessionTtlHours: number,
-    private readonly magicLinkTtlMinutes: number
-  ) {}
-
-  async createMagicLink(scope: Scope, email: string): Promise<{ token: string; expiresAt: Date }> {
-    const opaque = makeOpaqueToken("ml");
-    const expiresAt = new Date(Date.now() + this.magicLinkTtlMinutes * 60_000);
-
-    await this.repo.createMagicLink({
-      id: opaque.id,
-      email,
-      tokenHash: opaque.secretHash,
-      scope,
-      expiresAt
-    });
-
-    return { token: opaque.token, expiresAt };
-  }
-
-  async consumeMagicLink(scope: Scope, token: string): Promise<{ email: string } | null> {
-    const parsed = parseOpaqueToken(token, "ml");
-    if (!parsed) {
-      return null;
-    }
-    return this.repo.consumeMagicLink({ id: parsed.id, secret: parsed.secret, scope });
-  }
+  constructor(private readonly repo: Repo, private readonly sessionTtlHours: number) {}
 
   async createSession(scope: Scope, subjectEmail: string): Promise<string> {
     const opaque = makeOpaqueToken("st");

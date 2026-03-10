@@ -1,15 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
 import { AuthService } from "../auth/service.js";
 
-const verifyAdminSchema = z.object({
-  scope: z.string().optional(),
-  token: z.string().min(10).optional()
-});
-
 const errorMessages: Record<string, string> = {
-  invalid_link: "The sign-in link is invalid.",
-  invalid_or_expired_link: "The sign-in link is invalid or expired.",
+  invalid_credentials: "Invalid admin credentials. Check email and password.",
+  login_failed: "Unable to sign in. Please try again.",
+  rate_limited: "Too many login attempts. Please wait a minute and try again.",
   session_expired: "Your admin session has expired. Please sign in again.",
   signed_out: "You have been signed out."
 };
@@ -60,16 +55,20 @@ function loginPageHtml(errorKey?: string): string {
     <div class="row justify-content-center">
       <div class="col-md-8 col-lg-6">
         <h1 class="h3 mb-3">Proxy Admin Login</h1>
-        <p class="text-muted">Request a magic link with your BBC admin email.</p>
+        <p class="text-muted">Sign in with your allowlisted admin email and shared password.</p>
         ${renderErrorBanner(errorKey)}
         <div class="card shadow-sm">
           <div class="card-body">
-            <form id="requestMagicLinkForm" class="vstack gap-3">
+            <form id="adminLoginForm" class="vstack gap-3">
               <div>
                 <label for="adminEmail" class="form-label">Admin email</label>
                 <input id="adminEmail" name="email" type="email" class="form-control" required />
               </div>
-              <button id="loginSubmit" type="submit" class="btn btn-primary">Send magic link</button>
+              <div>
+                <label for="adminPassword" class="form-label">Password</label>
+                <input id="adminPassword" name="password" type="password" class="form-control" required />
+              </div>
+              <button id="loginSubmit" type="submit" class="btn btn-primary">Sign in</button>
             </form>
             <div id="loginStatus" class="alert py-2 mt-3 mb-0" hidden></div>
           </div>
@@ -80,7 +79,7 @@ function loginPageHtml(errorKey?: string): string {
 
   const script = `
   (function () {
-    var form = document.getElementById("requestMagicLinkForm");
+    var form = document.getElementById("adminLoginForm");
     var statusEl = document.getElementById("loginStatus");
     var submitButton = document.getElementById("loginSubmit");
 
@@ -103,23 +102,25 @@ function loginPageHtml(errorKey?: string): string {
 
       var emailInput = document.getElementById("adminEmail");
       var email = emailInput && "value" in emailInput ? String(emailInput.value || "").trim() : "";
-      if (!email) {
-        showStatus("danger", "Admin email is required.");
+      var passwordInput = document.getElementById("adminPassword");
+      var password = passwordInput && "value" in passwordInput ? String(passwordInput.value || "") : "";
+      if (!email || !password) {
+        showStatus("danger", "Admin email and password are required.");
         if (submitButton) submitButton.disabled = false;
         return;
       }
 
       try {
-        var response = await fetch("/admin/auth/magic-link/request", {
+        var response = await fetch("/admin/auth/login", {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email })
+          body: JSON.stringify({ email: email, password: password })
         });
 
-        if (response.status !== 204) {
+        if (response.status !== 200) {
           var text = await response.text();
-          var message = "Failed to request magic link.";
+          var message = "Failed to sign in.";
           if (text) {
             try {
               var parsed = JSON.parse(text);
@@ -131,9 +132,9 @@ function loginPageHtml(errorKey?: string): string {
           throw new Error(message);
         }
 
-        showStatus("success", "If this email is allowlisted, check your inbox for a sign-in link.");
+        window.location.href = "/admin";
       } catch (error) {
-        showStatus("danger", error instanceof Error ? error.message : "Failed to request magic link.");
+        showStatus("danger", error instanceof Error ? error.message : "Failed to sign in.");
       } finally {
         if (submitButton) {
           submitButton.disabled = false;
@@ -790,22 +791,6 @@ export function registerWebAdminRoutes(app: FastifyInstance, deps: { authService
     }
 
     return reply.type("text/html").send(dashboardPageHtml(email, errorKey));
-  });
-
-  app.get("/admin/verify", async (request, reply) => {
-    const parsed = verifyAdminSchema.safeParse(request.query);
-    if (!parsed.success || parsed.data.scope !== "admin" || !parsed.data.token) {
-      return reply.redirect("/admin?error=invalid_link");
-    }
-
-    const consumed = await deps.authService.consumeMagicLink("admin", parsed.data.token);
-    if (!consumed || !app.env.adminEmailAllowlist.has(consumed.email.toLowerCase())) {
-      return reply.redirect("/admin?error=invalid_or_expired_link");
-    }
-
-    const sessionToken = await deps.authService.createSession("admin", consumed.email);
-    AuthService.setSessionCookie(reply, "admin", sessionToken);
-    return reply.redirect("/admin");
   });
 
   app.post("/admin/logout", async (_request, reply) => {

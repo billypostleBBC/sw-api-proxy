@@ -11,13 +11,14 @@ async function buildAdminTestApp() {
     "env",
     {
       adminEmailAllowlist: new Set(["admin@bbc.co.uk"]),
+      adminPassword: "shared-admin-password",
       toolTokenTtlDays: 90
     } as any
   );
   app.decorate("kmsService", { encrypt: vi.fn() } as any);
-  app.decorate("emailService", { sendMagicLink: vi.fn() } as any);
 
   const authService = {
+    createSession: vi.fn().mockResolvedValue("st.login.secret"),
     getSessionEmail: vi.fn().mockResolvedValue("admin@bbc.co.uk")
   };
   const repo = {
@@ -29,13 +30,125 @@ async function buildAdminTestApp() {
   registerAdminRoutes(app, {
     authService: authService as any,
     repo: repo as any,
-    usageService: usageService as any,
-    appBaseUrl: "https://proxy.example.com"
+    usageService: usageService as any
   });
 
   await app.ready();
-  return { app, repo };
+  return { app, repo, authService };
 }
+
+describe("admin login route", () => {
+  it("creates admin session for allowlisted email and matching password", async () => {
+    const { app, authService } = await buildAdminTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/auth/login",
+      payload: {
+        email: "admin@bbc.co.uk",
+        password: "shared-admin-password"
+      },
+      remoteAddress: "10.0.0.1"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+    expect(authService.createSession).toHaveBeenCalledWith("admin", "admin@bbc.co.uk");
+    expect(response.headers["set-cookie"]).toContain("admin_session=");
+    await app.close();
+  });
+
+  it("rejects non-allowlisted email", async () => {
+    const { app } = await buildAdminTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/auth/login",
+      payload: {
+        email: "someone@bbc.co.uk",
+        password: "shared-admin-password"
+      },
+      remoteAddress: "10.0.0.2"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: "unauthorized",
+      message: "Invalid admin credentials"
+    });
+    await app.close();
+  });
+
+  it("rejects wrong password", async () => {
+    const { app } = await buildAdminTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/auth/login",
+      payload: {
+        email: "admin@bbc.co.uk",
+        password: "wrong-password"
+      },
+      remoteAddress: "10.0.0.3"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: "unauthorized",
+      message: "Invalid admin credentials"
+    });
+    await app.close();
+  });
+
+  it("returns 400 on invalid payload", async () => {
+    const { app } = await buildAdminTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/auth/login",
+      payload: {
+        email: "bad-email",
+        password: ""
+      },
+      remoteAddress: "10.0.0.4"
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe("bad_request");
+    await app.close();
+  });
+
+  it("rate limits repeated failed attempts from the same ip", async () => {
+    const { app } = await buildAdminTestApp();
+
+    for (let i = 0; i < 5; i += 1) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/admin/auth/login",
+        payload: {
+          email: "admin@bbc.co.uk",
+          password: "wrong-password"
+        },
+        remoteAddress: "10.0.0.5"
+      });
+      expect(response.statusCode).toBe(401);
+    }
+
+    const limited = await app.inject({
+      method: "POST",
+      url: "/admin/auth/login",
+      payload: {
+        email: "admin@bbc.co.uk",
+        password: "wrong-password"
+      },
+      remoteAddress: "10.0.0.5"
+    });
+
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json()).toEqual({
+      error: "rate_limit_exceeded",
+      message: "Too many login attempts",
+      details: { retryAfterSeconds: 60 }
+    });
+    await app.close();
+  });
+});
 
 describe("admin discovery routes", () => {
   it("requires admin session for GET /admin/projects", async () => {

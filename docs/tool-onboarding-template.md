@@ -10,7 +10,7 @@ Use this template when:
 3. You need a repeatable operator and agent runbook.
 
 Do not use this template when:
-1. The tool is intentionally browser-ticket based (`/auth/client-ticket`) and has no backend relay.
+1. The tool intentionally calls proxy directly from browser with no backend relay.
 2. You are changing proxy architecture or adding non-MVP infrastructure.
 
 ## Inputs required before running
@@ -20,6 +20,7 @@ Set and confirm these standardized variables before running commands:
 ```bash
 export BASE_URL="<BASE_URL>"
 export ADMIN_EMAIL="<ADMIN_EMAIL>"
+export ADMIN_PASSWORD="<ADMIN_PASSWORD>"
 
 export PROJECT_SLUG="<PROJECT_SLUG>"
 export PROJECT_NAME="<PROJECT_NAME>"
@@ -48,6 +49,7 @@ Input notes:
 ```bash
 test -n "$BASE_URL"
 test -n "$ADMIN_EMAIL"
+test -n "$ADMIN_PASSWORD"
 test -n "$PROJECT_SLUG"
 test -n "$PROJECT_NAME"
 test -n "$ENV"
@@ -68,7 +70,7 @@ command -v node
 
 ## Admin auth
 
-Request and verify admin magic-link session cookie:
+Request admin session cookie with email/password:
 
 ```bash
 scripts/admin-auth.sh "$BASE_URL" "$ADMIN_EMAIL"
