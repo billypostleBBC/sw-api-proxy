@@ -1,21 +1,22 @@
 {
-  "ServiceName": "proxy-api",
+  "ServiceArn": "arn:aws:apprunner:eu-west-2:445816555466:service/relay-api/<service-id>",
   "SourceConfiguration": {
     "ImageRepository": {
       "ImageIdentifier": "445816555466.dkr.ecr.eu-west-2.amazonaws.com/proxy-api:<image-tag>",
       "ImageRepositoryType": "ECR",
       "ImageConfiguration": {
         "Port": "3000",
+        "StartCommand": "node dist/relay-app.js",
         "RuntimeEnvironmentVariables": {
           "AWS_REGION": "eu-west-2",
-          "RELAY_PUBLIC_BASE_URL": "https://relay.example.com"
+          "RELAY_EMAIL_DOMAIN_ALLOWLIST": "bbc.co.uk",
+          "RELAY_SESSION_TTL_HOURS": "24"
         },
         "RuntimeEnvironmentSecrets": {
           "DATABASE_URL": "/proxy-api/DATABASE_URL",
           "KMS_KEY_ID": "/proxy-api/KMS_KEY_ID",
-          "ADMIN_PASSWORD_HASH": "/proxy-api/ADMIN_PASSWORD_HASH",
-          "ADMIN_EMAIL_ALLOWLIST": "/proxy-api/ADMIN_EMAIL_ALLOWLIST",
-          "CORS_ALLOWED_ORIGINS": "/proxy-api/CORS_ALLOWED_ORIGINS"
+          "RELAY_PASSWORD_HASH": "/relay-api/RELAY_PASSWORD_HASH",
+          "CORS_ALLOWED_ORIGINS": "/relay-api/CORS_ALLOWED_ORIGINS"
         }
       }
     },

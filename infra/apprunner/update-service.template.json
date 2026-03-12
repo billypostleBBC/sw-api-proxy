@@ -7,7 +7,8 @@
       "ImageConfiguration": {
         "Port": "3000",
         "RuntimeEnvironmentVariables": {
-          "AWS_REGION": "eu-west-2"
+          "AWS_REGION": "eu-west-2",
+          "RELAY_PUBLIC_BASE_URL": "https://relay.example.com"
         },
         "RuntimeEnvironmentSecrets": {
           "DATABASE_URL": "/proxy-api/DATABASE_URL",

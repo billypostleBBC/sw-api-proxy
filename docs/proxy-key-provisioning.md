@@ -1,12 +1,14 @@
 # Proxy Key Provisioning Guide
 
-This guide covers creating, rotating, and storing project key material and tool tokens for backend relay tools.
+This guide covers creating, rotating, and storing project key material and tool tokens for trusted server-side tools.
+
+Distributed clients should use the shared relay URL exposed by `/admin/tools` and authenticate with `POST /v1/auth/login`. They do not need tool tokens.
 
 ## 1) What is being provisioned
 
-Two different credentials are involved:
+Two different credentials are involved for server tools:
 1. OpenAI project key on proxy via `POST /admin/projects/:projectId/keys`.
-2. Tool token for backend relay via `POST /admin/tools/:toolId/tokens`.
+2. Tool token for trusted server tool access via `POST /admin/tools/:toolId/tokens`.
 
 Important:
 1. Raw OpenAI key is encrypted via KMS by proxy and not returned.

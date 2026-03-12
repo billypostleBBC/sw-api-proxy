@@ -87,6 +87,22 @@ export class Repo {
             status: row.status
         }));
     }
+    async getToolById(toolId) {
+        const result = await this.pool.query(`SELECT id, slug, project_id, mode, status
+       FROM tools
+       WHERE id = $1`, [toolId]);
+        const row = result.rows[0];
+        if (!row) {
+            return null;
+        }
+        return {
+            id: row.id,
+            slug: row.slug,
+            projectId: row.project_id,
+            mode: row.mode,
+            status: row.status
+        };
+    }
     async createToolToken(input) {
         await this.pool.query(`INSERT INTO tool_tokens (id, tool_id, token_hash, expires_at, status)
        VALUES ($1, $2, $3, $4, 'active')`, [input.tokenId, input.toolId, input.tokenHash, input.expiresAt]);

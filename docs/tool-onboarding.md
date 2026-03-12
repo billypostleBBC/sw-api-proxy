@@ -1,17 +1,24 @@
-# Tool Onboarding (Proxy-Backed OpenAI)
+# Tool Onboarding (Proxy + Shared Relay)
 
-Use this runbook to onboard any server-side tool or backend relay to SW API Proxy with project-scoped OpenAI keys and tool bearer tokens.
+Use this runbook to onboard any tool to this codebase.
 
-## When to use this runbook
+There are now two supported runtime paths:
+1. Trusted server tools call the proxy directly with a tool bearer token.
+2. Distributed clients call the shared relay with a short-lived relay session.
 
-Use this when:
-1. A tool needs OpenAI access through this proxy instead of holding a raw provider key itself.
-2. You want per-project RPM and daily token caps enforced by the proxy.
-3. You need a repeatable setup flow for project creation, key rotation, tool token minting, and smoke verification.
+## When to use which path
 
-Do not use this when:
-1. You are changing proxy architecture or adding non-MVP infrastructure.
-2. You are trying to give a long-lived proxy token directly to an untrusted client.
+Use the shared relay when:
+1. The tool is distributed to other people's machines.
+2. You do not want a long-lived tool token in the client bundle.
+3. The tool only needs `responses`.
+
+Use the direct proxy path when:
+1. The caller runs only on infrastructure you control.
+2. The caller needs `responses`, `embeddings`, or `models`.
+3. You can keep the tool token server-side.
+
+Do not use the direct proxy path for plugins, browser apps, or desktop apps you distribute.
 
 ## Required inputs
 
@@ -19,7 +26,7 @@ Do not use this when:
 export BASE_URL="https://nnm7du2h7j.eu-west-2.awsapprunner.com"
 export ADMIN_URL="$BASE_URL/admin"
 export PROXY_BASE_URL="$BASE_URL/proxy/v1"
-export ADMIN_EMAIL="admin@bbc.co.uk"
+export ADMIN_EMAIL="<your-allowlisted-admin-email>"
 export ADMIN_PASSWORD="<shared-admin-password>"
 export COOKIE_JAR="${TMPDIR:-/tmp}/proxy-api-admin.cookie"
 
@@ -30,67 +37,81 @@ export OWNER_EMAIL="owner@bbc.co.uk"
 export DAILY_TOKEN_CAP="2000000"
 export RPM_CAP="60"
 
-export TOOL_SLUG="<tool-slug>-relay"
-export TOOL_MODE="server" # server | browser | both
+export TOOL_SLUG="<tool-slug>"
+export TOOL_MODE="server"
 export OPENAI_API_KEY="sk-..."
 ```
 
 Notes:
-1. `BASE_URL` is the deployed service root.
-2. `ADMIN_URL` is the admin dashboard URL. Current hosted value: `https://nnm7du2h7j.eu-west-2.awsapprunner.com/admin`.
-3. `PROXY_BASE_URL` is the proxy root your tool will call. Current hosted value: `https://nnm7du2h7j.eu-west-2.awsapprunner.com/proxy/v1`.
-4. `PROJECT_SLUG` should follow `<tool-slug>-<env>`.
-5. `OPENAI_API_KEY` is the raw project OpenAI key that the proxy will encrypt and store.
-6. Operators sign in with the plaintext shared admin password, even if production runtime is configured with `ADMIN_PASSWORD_HASH`.
-7. Default cookie jar follows the actual script behavior: `${TMPDIR:-/tmp}/proxy-api-admin.cookie`.
+1. `BASE_URL` is the proxy/admin service root.
+2. `PROXY_BASE_URL` is always `$BASE_URL/proxy/v1`.
+3. `TOOL_SLUG` is now the stable routing key for shared relay URLs.
+4. `OPENAI_API_KEY` is the raw project OpenAI key that the proxy encrypts and stores.
+5. `ADMIN_EMAIL` must be one of the allowlisted admin emails configured on `proxy-api`; it is not derived from the relay email-domain rule.
+6. Operators still sign in with the plaintext shared admin password, even when production runtime uses `ADMIN_PASSWORD_HASH`.
 
-## Fast manual option
+## Current production environment
 
-Keep this path available while the admin dashboard UI is still being refined.
+The shared relay is already deployed in production.
 
-1. Open `$ADMIN_URL` in a browser.
+Use these production roots:
+1. Proxy/admin root: `https://nnm7du2h7j.eu-west-2.awsapprunner.com`
+2. Relay root: `https://5z97x9cmtm.eu-west-2.awsapprunner.com`
+
+For new production tools:
+1. Do not deploy another relay service.
+2. Create the tool in admin.
+3. Use the derived relay URL from the admin response or dashboard.
+4. The derived URL format is `https://5z97x9cmtm.eu-west-2.awsapprunner.com/v1/tools/<tool-slug>/responses`.
+
+## Environment-wide prerequisite: deploy the shared relay once
+
+The shared relay is one separate App Runner service for the whole environment, not one service per tool.
+
+Complete this once per environment:
+1. Deploy `relay-api` using `infra/apprunner/relay.service.template.json` or `infra/apprunner/relay.update-service.template.json`.
+2. Set its runtime auth secrets:
+   - `RELAY_PASSWORD_HASH`
+   - `CORS_ALLOWED_ORIGINS`
+3. Set its runtime vars:
+   - `RELAY_EMAIL_DOMAIN_ALLOWLIST`
+   - `RELAY_SESSION_TTL_HOURS`
+4. Copy the public relay service URL.
+5. Configure the proxy/admin service with `RELAY_PUBLIC_BASE_URL=<relay-service-url>`.
+
+After that, every tool created in the admin dashboard will automatically expose:
+
+```text
+<RELAY_PUBLIC_BASE_URL>/v1/tools/<tool-slug>/responses
+```
+
+No per-tool relay deployment is required.
+
+`CORS_ALLOWED_ORIGINS` can be either:
+1. `*` to allow any browser origin for the moment.
+2. A comma-separated allowlist when you want to lock it down later.
+
+Current production relay setting is temporarily `*` while the final allowlist is being defined.
+
+## Fast manual path
+
+Use the admin dashboard when you want the smallest setup surface.
+
+1. Open `$ADMIN_URL`.
 2. Sign in with your allowlisted admin email and shared password.
 3. Create or find the project.
 4. Rotate the project OpenAI key.
 5. Create or find the tool.
-6. Mint a tool token and copy it immediately.
-7. Run `scripts/smoke-proxy.sh "$BASE_URL" "<tool_token>" "gpt-4.1-mini"`.
+6. Copy the derived relay URL from the tools table if this is a distributed client.
+7. Mint a tool token only if this is a trusted server tool.
 
-## Preflight checks
+## Script-first path
 
-```bash
-test -n "$BASE_URL"
-test -n "$ADMIN_EMAIL"
-test -n "$ADMIN_PASSWORD"
-test -n "$COOKIE_JAR"
-test -n "$PROJECT_SLUG"
-test -n "$PROJECT_NAME"
-test -n "$ENVIRONMENT"
-test -n "$OWNER_EMAIL"
-test -n "$DAILY_TOKEN_CAP"
-test -n "$RPM_CAP"
-test -n "$TOOL_SLUG"
-test -n "$TOOL_MODE"
-test -n "$OPENAI_API_KEY"
-```
-
-```bash
-command -v bash
-command -v curl
-command -v node
-```
-
-## Step 1: Admin auth
+This script path is still server-tool oriented because it always mints a tool token.
 
 ```bash
 scripts/admin-auth.sh "$BASE_URL" "$ADMIN_EMAIL" "$COOKIE_JAR"
-```
 
-This creates or refreshes the admin session cookie jar used by the later steps.
-
-## Step 2: Create or find project, set key, create or find tool, mint token
-
-```bash
 scripts/onboard-server-tool.sh \
   --base-url "$BASE_URL" \
   --cookie-jar "$COOKIE_JAR" \
@@ -105,138 +126,188 @@ scripts/onboard-server-tool.sh \
   --openai-api-key "$OPENAI_API_KEY"
 ```
 
-Script behavior:
-1. Finds the project by slug, or creates it.
-2. Rotates or sets the active OpenAI key for that project.
-3. Finds the tool by slug plus project, or creates it.
-4. Mints a new tool token.
-
-Expected output includes:
+Outputs include:
 1. `project_id`
-2. `project_slug`
-3. `tool_id`
-4. `tool_slug`
-5. `token_expires_at`
-6. `tool_token`
+2. `tool_id`
+3. `tool_token`
+4. `token_expires_at`
 
-`tool_token` is shown once. Store it immediately in a server-side secret manager.
+If you are onboarding a distributed client, you can ignore `tool_token` and use the relay URL derived from `TOOL_SLUG`.
 
-## Step 3: Store proxy config in secrets
+## Admin API responses you can rely on
+
+Create tool:
 
 ```bash
-export APP_NAME="<app-name>"
-export PARAM_BASE="/$APP_NAME/$ENVIRONMENT"
-export TOOL_TOKEN="<tool_token>"
-
-aws ssm put-parameter \
-  --name "$PARAM_BASE/OPENAI_BASE_URL" \
-  --type "SecureString" \
-  --overwrite \
-  --value "$PROXY_BASE_URL"
-
-aws ssm put-parameter \
-  --name "$PARAM_BASE/OPENAI_API_KEY" \
-  --type "SecureString" \
-  --overwrite \
-  --value "$TOOL_TOKEN"
+curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "slug":"storyworks-alt-text",
+    "projectId":123,
+    "mode":"server"
+  }'
 ```
 
-## Step 4: Integrate the tool
+Response when `RELAY_PUBLIC_BASE_URL` is configured:
 
-Backend services should use:
+```json
+{
+  "id": 456,
+  "relayResponsesUrl": "https://5z97x9cmtm.eu-west-2.awsapprunner.com/v1/tools/storyworks-alt-text/responses"
+}
+```
+
+Mint token:
 
 ```bash
-OPENAI_BASE_URL="$PROXY_BASE_URL"
-OPENAI_API_KEY=<tool bearer token>
+curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools/456/tokens"
+```
+
+Response:
+
+```json
+{
+  "token": "tt.<id>.<secret>",
+  "expiresAt": "2026-06-01T09:00:00.000Z",
+  "relayResponsesUrl": "https://5z97x9cmtm.eu-west-2.awsapprunner.com/v1/tools/storyworks-alt-text/responses"
+}
+```
+
+## Path A: Distributed clients through the shared relay
+
+### Client login
+
+Users sign in once per day:
+
+```bash
+export RELAY_BASE_URL="https://5z97x9cmtm.eu-west-2.awsapprunner.com"
+export RELAY_PASSWORD="<shared-relay-password>"
+
+curl -s -X POST "$RELAY_BASE_URL/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email":"person@bbc.com",
+    "password":"'"$RELAY_PASSWORD"'"
+  }'
+```
+
+Success:
+
+```json
+{
+  "token": "st.<id>.<secret>",
+  "expiresAt": "2026-03-13T12:00:00.000Z"
+}
+```
+
+### Client generation call
+
+```bash
+export RELAY_SESSION_TOKEN="st.<id>.<secret>"
+export RELAY_RESPONSES_URL="https://5z97x9cmtm.eu-west-2.awsapprunner.com/v1/tools/storyworks-alt-text/responses"
+
+curl -s -X POST "$RELAY_RESPONSES_URL" \
+  -H "Authorization: Bearer $RELAY_SESSION_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model":"gpt-4.1-mini",
+    "input":"Return one sentence saying relay connectivity is working."
+  }'
 ```
 
 Rules:
-1. Keep the tool token server-side only.
-2. Any untrusted client should call your backend relay, not the proxy directly with a long-lived token.
-3. This proxy currently supports `POST /proxy/v1/responses`, `POST /proxy/v1/embeddings`, and `GET /proxy/v1/models`.
+1. Do not put tool bearer tokens in distributed clients.
+2. Do not point distributed clients at `localhost` in production.
+3. The shared relay currently exposes only `POST /v1/tools/:toolSlug/responses`.
+4. Relay login accepts only email domains configured on `relay-api` via `RELAY_EMAIL_DOMAIN_ALLOWLIST`.
 
-If your backend already uses the OpenAI SDK, point it at the proxy and use the tool token as the API key:
+## Path B: Trusted server tools through the proxy
 
-```ts
-import OpenAI from "openai";
+Store the tool token server-side only.
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  baseURL: process.env.OPENAI_BASE_URL
-});
+```bash
+export PROXY_BEARER_TOKEN="tt.<id>.<secret>"
+
+curl -s -X POST "$PROXY_BASE_URL/responses" \
+  -H "Authorization: Bearer $PROXY_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model":"gpt-4.1-mini",
+    "input":"Return one sentence saying proxy connectivity is working."
+  }'
 ```
 
-## Step 5: Smoke verification
+Supported proxy endpoints in MVP:
+1. `POST /proxy/v1/responses`
+2. `POST /proxy/v1/embeddings`
+3. `GET /proxy/v1/models`
 
-Run the bundled smoke test:
+## Smoke verification
+
+Proxy smoke:
 
 ```bash
 scripts/smoke-proxy.sh "$BASE_URL" "<tool_token>" "gpt-4.1-mini"
 ```
 
-Optional embeddings check:
+Relay smoke:
 
 ```bash
-curl -s -X POST "$BASE_URL/proxy/v1/embeddings" \
-  -H "Authorization: Bearer <tool_token>" \
+export RELAY_BASE_URL="https://5z97x9cmtm.eu-west-2.awsapprunner.com"
+export RELAY_PASSWORD="<shared-relay-password>"
+
+RELAY_SESSION_TOKEN="$(curl -s -X POST "$RELAY_BASE_URL/v1/auth/login" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "text-embedding-3-small",
-    "input": "proxy smoke test"
+    "email":"person@bbc.com",
+    "password":"'"$RELAY_PASSWORD"'"
+  }' | node -e 'const data=JSON.parse(require("fs").readFileSync(0,"utf8")); process.stdout.write(data.token || "");')"
+
+curl -s -X POST "$RELAY_BASE_URL/v1/tools/$TOOL_SLUG/responses" \
+  -H "Authorization: Bearer $RELAY_SESSION_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model":"gpt-4.1-mini",
+    "input":"Return one sentence saying relay smoke is working."
   }'
 ```
 
-Expected:
-1. `models_check=passed`
-2. `responses_check=passed`
-3. Embeddings call returns `200` when your tool needs embeddings.
+## Rotation rules
 
-## Rotation runbook
+Server tool tokens:
+1. Mint new tool token.
+2. Deploy the consuming server with the new token.
+3. Run proxy smoke verification.
+4. Revoke the old token.
 
-Use this order only:
-1. Mint a new tool token.
-2. Update the consuming backend secret.
-3. Deploy the backend with the new token.
-4. Verify smoke checks and production traffic.
-5. Revoke the old token.
+Relay shared password:
+1. Update `RELAY_PASSWORD_HASH` on the `relay-api` service.
+2. Deploy `relay-api`.
+3. Verify `POST /v1/auth/login`.
+4. Communicate the new shared relay password to users.
 
-Mint:
+## Common runtime failures
 
-```bash
-curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools/<tool_id>/tokens"
-```
-
-Revoke:
-
-```bash
-curl -i -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools/<tool_id>/tokens/<old_token_id>/revoke"
-```
-
-Do not revoke the old token before the new one is deployed and verified. This service fails closed.
-
-## Failure checklist
-
-If onboarding fails:
-1. Confirm the admin email is allowlisted.
-2. Confirm the admin password is correct for the environment.
-3. Confirm the cookie jar path is the same one created by `scripts/admin-auth.sh`.
-4. Confirm caps are numeric and positive.
-5. Confirm the project has an active OpenAI key.
-
-Common runtime responses:
+Proxy:
 1. `401 Missing or invalid bearer token`: wrong, expired, or revoked tool token.
-2. `403 No active API key for project`: project key was not set or is inactive.
-3. `403 token_cap_exceeded`: project daily token cap reached.
+2. `403 No active API key for project`: project key missing or inactive.
+3. `403 token_cap_exceeded`: project daily cap reached.
 4. `429 rate_limit_exceeded`: project RPM cap reached.
-5. `502 upstream_error`: upstream OpenAI request failed.
+
+Relay:
+1. `401 Invalid relay credentials`: wrong relay password or non-allowed email domain.
+2. `401 Missing or invalid bearer token`: missing, invalid, or expired relay session.
+3. `404 Tool not found`: slug does not match a tool.
+4. `403 Tool is inactive`: tool exists but is disabled.
+5. `403 Project is inactive`: project exists but is disabled.
 
 ## Completion checklist
 
 Complete only when all are true:
 1. Project exists with the expected slug and environment.
-2. Active OpenAI key is set via `/admin/projects/:projectId/keys`.
-3. Tool exists with the expected slug and mode.
-4. Tool token is stored in server-side secrets.
-5. Consuming backend reads `OPENAI_BASE_URL` and `OPENAI_API_KEY` from secrets, not code.
-6. `scripts/smoke-proxy.sh` passes.
-7. No plaintext provider key or tool token appears in repo files, logs, or client-side runtime.
+2. Active OpenAI key is set for the project.
+3. Tool exists with the expected slug.
+4. Distributed clients use the derived relay URL, not a tool token.
+5. Trusted server tools store the tool token in server-side secrets only.
+6. Proxy smoke passes for any server tool path.
+7. Relay login and relay responses smoke pass for any distributed-client path.

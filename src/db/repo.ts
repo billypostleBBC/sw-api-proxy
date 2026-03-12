@@ -186,6 +186,27 @@ export class Repo {
     }));
   }
 
+  async getToolById(toolId: number): Promise<{ id: number; slug: string; projectId: number; mode: string; status: string } | null> {
+    const result = await this.pool.query<ToolRow>(
+      `SELECT id, slug, project_id, mode, status
+       FROM tools
+       WHERE id = $1`,
+      [toolId]
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      slug: row.slug,
+      projectId: row.project_id,
+      mode: row.mode,
+      status: row.status
+    };
+  }
+
   async createToolToken(input: {
     tokenId: string;
     tokenHash: string;

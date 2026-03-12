@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { registerAdminRoutes } from "../src/admin/routes.js";
 import { sha256 } from "../src/utils/crypto.js";
 
-async function buildAdminTestApp() {
+async function buildAdminTestApp(options?: { relayPublicBaseUrl?: string }) {
   const app = Fastify();
   await app.register(cookie);
 
@@ -13,7 +13,8 @@ async function buildAdminTestApp() {
     {
       adminEmailAllowlist: new Set(["admin@bbc.co.uk"]),
       adminPasswordHash: sha256("shared-admin-password"),
-      toolTokenTtlDays: 90
+      toolTokenTtlDays: 90,
+      relayPublicBaseUrl: options?.relayPublicBaseUrl
     } as any
   );
   app.decorate("kmsService", { encrypt: vi.fn() } as any);
@@ -24,7 +25,16 @@ async function buildAdminTestApp() {
   };
   const repo = {
     listProjects: vi.fn().mockResolvedValue([]),
-    listTools: vi.fn().mockResolvedValue([])
+    listTools: vi.fn().mockResolvedValue([]),
+    createTool: vi.fn().mockResolvedValue({ id: 11 }),
+    getToolById: vi.fn().mockResolvedValue({
+      id: 8,
+      slug: "story-assistant-server",
+      projectId: 10,
+      mode: "server",
+      status: "active"
+    }),
+    createToolToken: vi.fn().mockResolvedValue(undefined)
   };
   const usageService = { audit: vi.fn() };
 
@@ -260,6 +270,97 @@ describe("admin discovery routes", () => {
         }
       ]
     });
+    await app.close();
+  });
+
+  it("includes derived relay URLs when relay base URL is configured", async () => {
+    const { app, repo } = await buildAdminTestApp({
+      relayPublicBaseUrl: "https://relay.example.com"
+    });
+    repo.listTools.mockResolvedValue([
+      {
+        id: 8,
+        slug: "story-assistant-server",
+        projectId: 10,
+        mode: "server",
+        status: "active"
+      }
+    ]);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/tools",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      tools: [
+        {
+          id: 8,
+          slug: "story-assistant-server",
+          projectId: 10,
+          mode: "server",
+          status: "active",
+          relayResponsesUrl: "https://relay.example.com/v1/tools/story-assistant-server/responses"
+        }
+      ]
+    });
+    await app.close();
+  });
+
+  it("returns relay URL when creating a tool", async () => {
+    const { app, repo } = await buildAdminTestApp({
+      relayPublicBaseUrl: "https://relay.example.com"
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/tools",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      },
+      payload: {
+        slug: "story-assistant-server",
+        projectId: 10,
+        mode: "server"
+      }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(repo.createTool).toHaveBeenCalledWith({
+      slug: "story-assistant-server",
+      projectId: 10,
+      mode: "server"
+    });
+    expect(response.json()).toEqual({
+      id: 11,
+      relayResponsesUrl: "https://relay.example.com/v1/tools/story-assistant-server/responses"
+    });
+    await app.close();
+  });
+
+  it("returns relay URL alongside minted tool token", async () => {
+    const { app, repo } = await buildAdminTestApp({
+      relayPublicBaseUrl: "https://relay.example.com"
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/tools/8/tokens",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(repo.getToolById).toHaveBeenCalledWith(8);
+    expect(repo.createToolToken).toHaveBeenCalledTimes(1);
+    expect(response.json().relayResponsesUrl).toBe("https://relay.example.com/v1/tools/story-assistant-server/responses");
+    expect(response.json().expiresAt).toMatch(/^20\d\d-/);
+    expect(response.json().token).toMatch(/^tt\./);
     await app.close();
   });
 });

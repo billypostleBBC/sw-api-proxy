@@ -8,7 +8,7 @@ export class AuthService {
         this.repo = repo;
         this.sessionTtlHours = sessionTtlHours;
     }
-    async createSession(scope, subjectEmail) {
+    async createSessionWithExpiry(scope, subjectEmail) {
         const opaque = makeOpaqueToken("st");
         const expiresAt = new Date(Date.now() + this.sessionTtlHours * 60 * 60_000);
         await this.repo.createSession({
@@ -18,7 +18,15 @@ export class AuthService {
             scope,
             expiresAt
         });
-        return opaque.token;
+        return {
+            id: opaque.id,
+            token: opaque.token,
+            expiresAt
+        };
+    }
+    async createSession(scope, subjectEmail) {
+        const session = await this.createSessionWithExpiry(scope, subjectEmail);
+        return session.token;
     }
     async getSessionEmail(scope, token) {
         const parsed = parseOpaqueToken(token, "st");
@@ -41,6 +49,14 @@ export class AuthService {
         return scope === "admin"
             ? request.cookies[ADMIN_COOKIE]
             : request.cookies[USER_COOKIE];
+    }
+    static getBearerToken(request) {
+        const auth = request.headers.authorization;
+        if (!auth?.startsWith("Bearer ")) {
+            return undefined;
+        }
+        const token = auth.slice("Bearer ".length).trim();
+        return token || undefined;
     }
     static makeToolToken() {
         const opaque = makeOpaqueToken("tt");

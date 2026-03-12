@@ -6,7 +6,9 @@
     "test": "vitest run",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/app.js",
+    "start:relay": "node dist/relay-app.js",
     "dev": "tsx watch src/app.ts",
+    "dev:relay": "tsx watch src/relay-app.ts",
     "test:watch": "vitest"
   },
   "keywords": [],

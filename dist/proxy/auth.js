@@ -1,8 +1,8 @@
+import { AuthService } from "../auth/service.js";
 export async function resolveProxyAuth(request, repo) {
-    const auth = request.headers.authorization;
-    if (!auth?.startsWith("Bearer ")) {
+    const token = AuthService.getBearerToken(request);
+    if (!token) {
         return null;
     }
-    const token = auth.slice("Bearer ".length).trim();
     return repo.findAuthByToolToken(token);
 }

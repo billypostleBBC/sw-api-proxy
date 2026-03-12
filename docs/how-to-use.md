@@ -2,7 +2,7 @@
 
 This guide covers two tasks:
 1. Add or rotate an OpenAI API key for a project.
-2. Point tools at this proxy so tools never handle raw OpenAI keys.
+2. Point server tools at the proxy and distributed clients at the shared relay so raw OpenAI keys and long-lived tool tokens stay server-side.
 
 ## Focused runbooks
 
@@ -22,6 +22,7 @@ Use these when you need a narrower operational guide:
 export BASE_URL="https://nnm7du2h7j.eu-west-2.awsapprunner.com"
 export ADMIN_URL="$BASE_URL/admin"
 export PROXY_BASE_URL="$BASE_URL/proxy/v1"
+export RELAY_BASE_URL="https://relay.example.com"
 export ADMIN_EMAIL="admin1@bbc.co.uk"
 export ADMIN_PASSWORD="<shared-admin-password>"
 export COOKIE_JAR="${TMPDIR:-/tmp}/proxy-api-admin.cookie"
@@ -44,8 +45,9 @@ Keep using this path while the admin UI is still being refined. It is the fastes
 5. In `Tools & Tokens`:
    - Create a tool if one does not already exist.
    - Use the tool ID shown in the tools table.
+   - Copy the relay URL shown in the table if the tool is a distributed client.
 6. In `Mint tool token`:
-   - Enter the tool ID.
+   - Enter the tool ID only for trusted server tools.
    - Mint the token and copy it immediately. It is only shown once.
 7. Run the smoke test:
 
@@ -111,7 +113,7 @@ Behavior in this codebase:
 3. Key is encrypted via KMS before storage.
 4. Raw key is never returned from API.
 
-## Step 4: Create A Tool And Issue A Tool Token (Server/Backend Tools)
+## Step 4: Create A Tool
 
 1. Create tool:
 
@@ -125,9 +127,50 @@ curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools" \
   }'
 ```
 
-Response: `{"id":456}`
+Response when the shared relay URL is configured on the proxy service:
 
-2. Issue tool bearer token:
+```json
+{"id":456,"relayResponsesUrl":"https://relay.example.com/v1/tools/storyworks-ai-assistant/responses"}
+```
+
+If the tool already exists, look it up via the admin API:
+
+```bash
+curl -s -b "$COOKIE_JAR" "$BASE_URL/admin/tools?slug=storyworks-ai-assistant&projectId=$PROJECT_ID"
+```
+
+## Step 5: Choose runtime path
+
+### Path A: Distributed client through shared relay
+
+Client users sign in once per day:
+
+```bash
+export RELAY_PASSWORD="<shared-relay-password>"
+
+curl -s -X POST "$RELAY_BASE_URL/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email":"person@bbc.co.uk",
+    "password":"'"$RELAY_PASSWORD"'"
+  }'
+```
+
+Call the tool-specific relay URL returned by admin:
+
+```bash
+curl -s -X POST "$RELAY_BASE_URL/v1/tools/storyworks-ai-assistant/responses" \
+  -H "Authorization: Bearer <relay_session_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4.1-mini",
+    "input": "Return one sentence saying relay connectivity is working."
+  }'
+```
+
+### Path B: Trusted server tool through proxy
+
+Mint tool bearer token:
 
 ```bash
 export TOOL_ID="456"
@@ -141,15 +184,9 @@ Response includes a long-lived token and expiry:
 {"token":"tt.<id>.<secret>","expiresAt":"2026-05-01T10:00:00.000Z"}
 ```
 
-Store this token server-side only (for example in your tool's env vars).
+Store this token server-side only.
 
-If the tool already exists, look it up via the admin API:
-
-```bash
-curl -s -b "$COOKIE_JAR" "$BASE_URL/admin/tools?slug=storyworks-ai-assistant&projectId=$PROJECT_ID"
-```
-
-## Step 5: Point A Server Tool To The Proxy
+Point the server tool at the proxy:
 
 Set in the tool:
 
@@ -214,6 +251,10 @@ Supported proxy endpoints in MVP:
    - Mint a new token (`POST /admin/tools/:toolId/tokens`).
    - Update the consuming tool secret.
    - Revoke old token.
+3. Rotate relay shared password:
+   - Update `RELAY_PASSWORD_HASH` on the `relay-api` App Runner service.
+   - Deploy the relay service.
+   - Verify `POST /v1/auth/login`.
 3. Revoke a token:
 
 ```bash
@@ -229,4 +270,5 @@ curl -i -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools/$TOOL_ID/tokens/$TOKEN_I
 2. `403 No active API key for project`: key not set for that project.
 3. `403 token_cap_exceeded`: project daily cap reached.
 4. `429 rate_limit_exceeded`: project RPM cap reached.
-5. Browser CORS errors: missing origin in `CORS_ALLOWED_ORIGINS`.
+5. Browser or plugin CORS errors: missing origin in `CORS_ALLOWED_ORIGINS`.
+6. Relay login `401 Invalid relay credentials`: wrong shared relay password or non-BBC email.

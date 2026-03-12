@@ -4,6 +4,8 @@ import { sendError } from "../utils/http.js";
 import { AuthService } from "../auth/service.js";
 import type { Repo } from "../db/repo.js";
 import { UsageService } from "../usage/service.js";
+import { LoginRateLimiter } from "../auth/login-rate-limit.js";
+import { buildRelayResponsesUrl } from "../relay/url.js";
 import { safeEqualHex, sha256 } from "../utils/crypto.js";
 
 const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) });
@@ -29,48 +31,10 @@ const toolsQuerySchema = z.object({
   projectId: z.coerce.number().int().positive().optional()
 });
 
-const LOGIN_WINDOW_MS = 60_000;
-const LOGIN_MAX_ATTEMPTS = 5;
-
-const loginFailuresByIp = new Map<string, { count: number; windowStartMs: number }>();
-
-function normalizeIp(ip: string | undefined): string {
-  const trimmed = (ip ?? "").trim();
-  return trimmed || "unknown";
-}
-
-function getLoginRateLimitState(ip: string, nowMs: number): { limited: boolean; retryAfterSeconds: number } {
-  const existing = loginFailuresByIp.get(ip);
-  if (!existing) {
-    return { limited: false, retryAfterSeconds: 0 };
-  }
-
-  if (nowMs - existing.windowStartMs >= LOGIN_WINDOW_MS) {
-    loginFailuresByIp.delete(ip);
-    return { limited: false, retryAfterSeconds: 0 };
-  }
-
-  if (existing.count < LOGIN_MAX_ATTEMPTS) {
-    return { limited: false, retryAfterSeconds: 0 };
-  }
-
-  const retryAfterSeconds = Math.max(1, Math.ceil((existing.windowStartMs + LOGIN_WINDOW_MS - nowMs) / 1000));
-  return { limited: true, retryAfterSeconds };
-}
-
-function recordLoginFailure(ip: string, nowMs: number): void {
-  const existing = loginFailuresByIp.get(ip);
-  if (!existing || nowMs - existing.windowStartMs >= LOGIN_WINDOW_MS) {
-    loginFailuresByIp.set(ip, { count: 1, windowStartMs: nowMs });
-    return;
-  }
-
-  existing.count += 1;
-  loginFailuresByIp.set(ip, existing);
-}
-
-function clearLoginFailures(ip: string): void {
-  loginFailuresByIp.delete(ip);
+function relayResponseForTool(baseUrl: string | undefined, tool: { slug: string }) {
+  return {
+    relayResponsesUrl: buildRelayResponsesUrl(baseUrl, tool.slug)
+  };
 }
 
 async function requireAdmin(
@@ -91,7 +55,7 @@ async function requireAdmin(
   if (!email) {
     return null;
   }
-  return app.env.adminEmailAllowlist.has(email.toLowerCase()) ? email : null;
+  return app.env.adminEmailAllowlist?.has(email.toLowerCase()) ? email : null;
 }
 
 export function registerAdminRoutes(
@@ -102,10 +66,12 @@ export function registerAdminRoutes(
     usageService: UsageService;
   }
 ): void {
+  const loginRateLimiter = new LoginRateLimiter();
+
   app.post("/admin/auth/login", async (request, reply) => {
-    const ip = normalizeIp(request.ip);
+    const ip = loginRateLimiter.normalizeKey(request.ip);
     const nowMs = Date.now();
-    const rateLimit = getLoginRateLimitState(ip, nowMs);
+    const rateLimit = loginRateLimiter.getState(ip, nowMs);
     if (rateLimit.limited) {
       return sendError(reply, 429, "rate_limit_exceeded", "Too many login attempts", {
         retryAfterSeconds: rateLimit.retryAfterSeconds
@@ -114,23 +80,23 @@ export function registerAdminRoutes(
 
     const parsed = loginSchema.safeParse(request.body);
     if (!parsed.success) {
-      recordLoginFailure(ip, nowMs);
+      loginRateLimiter.recordFailure(ip, nowMs);
       return sendError(reply, 400, "bad_request", "Invalid login payload", { issues: parsed.error.issues });
     }
 
     const email = parsed.data.email.toLowerCase().trim();
-    const emailAllowed = app.env.adminEmailAllowlist.has(email);
-    const expectedPasswordHash = app.env.adminPasswordHash;
+    const emailAllowed = app.env.adminEmailAllowlist?.has(email) ?? false;
+    const expectedPasswordHash = app.env.adminPasswordHash ?? "";
     const suppliedPasswordHash = sha256(parsed.data.password);
     const passwordValid = safeEqualHex(expectedPasswordHash, suppliedPasswordHash);
     if (!emailAllowed || !passwordValid) {
-      recordLoginFailure(ip, nowMs);
+      loginRateLimiter.recordFailure(ip, nowMs);
       return sendError(reply, 401, "unauthorized", "Invalid admin credentials");
     }
 
     const sessionToken = await deps.authService.createSession("admin", email);
     AuthService.setSessionCookie(reply, "admin", sessionToken);
-    clearLoginFailures(ip);
+    loginRateLimiter.clear(ip);
     return reply.send({ ok: true });
   });
 
@@ -216,7 +182,10 @@ export function registerAdminRoutes(
       metadata: parsed.data
     });
 
-    return reply.code(201).send({ id: created.id });
+    return reply.code(201).send({
+      id: created.id,
+      ...relayResponseForTool(app.env.relayPublicBaseUrl, { slug: parsed.data.slug })
+    });
   });
 
   app.post("/admin/tools/:toolId/tokens", async (request, reply) => {
@@ -228,6 +197,11 @@ export function registerAdminRoutes(
     const toolId = Number((request.params as { toolId: string }).toolId);
     if (!Number.isFinite(toolId) || toolId < 1) {
       return sendError(reply, 400, "bad_request", "Invalid tool id");
+    }
+
+    const tool = await deps.repo.getToolById(toolId);
+    if (!tool) {
+      return sendError(reply, 404, "not_found", "Tool not found");
     }
 
     const generated = AuthService.makeToolToken();
@@ -249,7 +223,11 @@ export function registerAdminRoutes(
       metadata: { toolId, expiresAt: expiresAt.toISOString() }
     });
 
-    return reply.code(201).send({ token: generated.token, expiresAt: expiresAt.toISOString() });
+    return reply.code(201).send({
+      token: generated.token,
+      expiresAt: expiresAt.toISOString(),
+      ...relayResponseForTool(app.env.relayPublicBaseUrl, tool)
+    });
   });
 
   app.post("/admin/tools/:toolId/tokens/:tokenId/revoke", async (request, reply) => {
@@ -305,7 +283,12 @@ export function registerAdminRoutes(
       slug: parsed.data.slug,
       projectId: parsed.data.projectId
     });
-    return reply.send({ tools });
+    return reply.send({
+      tools: tools.map((tool) => ({
+        ...tool,
+        ...relayResponseForTool(app.env.relayPublicBaseUrl, tool)
+      }))
+    });
   });
 
   app.get("/admin/usage", async (request, reply) => {

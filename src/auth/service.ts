@@ -9,7 +9,7 @@ const USER_COOKIE = "user_session";
 export class AuthService {
   constructor(private readonly repo: Repo, private readonly sessionTtlHours: number) {}
 
-  async createSession(scope: Scope, subjectEmail: string): Promise<string> {
+  async createSessionWithExpiry(scope: Scope, subjectEmail: string): Promise<{ id: string; token: string; expiresAt: Date }> {
     const opaque = makeOpaqueToken("st");
     const expiresAt = new Date(Date.now() + this.sessionTtlHours * 60 * 60_000);
 
@@ -21,7 +21,16 @@ export class AuthService {
       expiresAt
     });
 
-    return opaque.token;
+    return {
+      id: opaque.id,
+      token: opaque.token,
+      expiresAt
+    };
+  }
+
+  async createSession(scope: Scope, subjectEmail: string): Promise<string> {
+    const session = await this.createSessionWithExpiry(scope, subjectEmail);
+    return session.token;
   }
 
   async getSessionEmail(scope: Scope, token: string): Promise<string | null> {
@@ -47,6 +56,16 @@ export class AuthService {
     return scope === "admin"
       ? (request.cookies[ADMIN_COOKIE] as string | undefined)
       : (request.cookies[USER_COOKIE] as string | undefined);
+  }
+
+  static getBearerToken(request: FastifyRequest): string | undefined {
+    const auth = request.headers.authorization;
+    if (!auth?.startsWith("Bearer ")) {
+      return undefined;
+    }
+
+    const token = auth.slice("Bearer ".length).trim();
+    return token || undefined;
   }
 
   static makeToolToken(): { token: string; tokenId: string; tokenHash: string } {
