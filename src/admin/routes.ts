@@ -120,7 +120,7 @@ export function registerAdminRoutes(
 
     const email = parsed.data.email.toLowerCase().trim();
     const emailAllowed = app.env.adminEmailAllowlist.has(email);
-    const expectedPasswordHash = sha256(app.env.adminPassword);
+    const expectedPasswordHash = app.env.adminPasswordHash;
     const suppliedPasswordHash = sha256(parsed.data.password);
     const passwordValid = safeEqualHex(expectedPasswordHash, suppliedPasswordHash);
     if (!emailAllowed || !passwordValid) {

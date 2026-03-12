@@ -16,6 +16,18 @@ Create one project per product and environment:
 - OpenAI key for the target project/environment
 - `bash`, `curl`, and `node` available locally
 
+## Fast manual option
+
+If you want the shortest path for a one-off smoke test:
+- Open `<base_url>/admin` in a browser.
+- Sign in with your allowlisted admin email and shared password.
+- Use the dashboard to create/find the project, rotate the project API key, create/find the tool, and mint a tool token.
+- Copy the minted token immediately and run:
+
+```bash
+scripts/smoke-proxy.sh https://proxy.example.com <tool_token> gpt-4.1-mini
+```
+
 ## Step 1: Admin auth
 
 ```bash

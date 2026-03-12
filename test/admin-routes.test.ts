@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import { describe, expect, it, vi } from "vitest";
 import { registerAdminRoutes } from "../src/admin/routes.js";
+import { sha256 } from "../src/utils/crypto.js";
 
 async function buildAdminTestApp() {
   const app = Fastify();
@@ -11,7 +12,7 @@ async function buildAdminTestApp() {
     "env",
     {
       adminEmailAllowlist: new Set(["admin@bbc.co.uk"]),
-      adminPassword: "shared-admin-password",
+      adminPasswordHash: sha256("shared-admin-password"),
       toolTokenTtlDays: 90
     } as any
   );

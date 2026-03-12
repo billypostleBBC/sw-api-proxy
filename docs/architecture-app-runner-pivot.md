@@ -12,7 +12,7 @@ This service is an internal MVP proxy/relay. App Runner reduces operational over
 ## What changes
 1. Deployment control plane moves from ECS artifacts to App Runner service config.
 2. Production runtime secrets source is locked to SSM Parameter Store via App Runner RuntimeEnvironmentSecrets.
-3. Network posture decision is still pending between App Runner `DEFAULT` egress and `VPC` connector egress.
+3. Network posture is App Runner `VPC` egress using `proxy-api-vpc-connector-private`.
 4. Deployment flow is manual image push to ECR plus explicit App Runner service update.
 
 ## Startup and health
@@ -24,8 +24,8 @@ This service is an internal MVP proxy/relay. App Runner reduces operational over
 1. Account/region: `445816555466` in `eu-west-2`.
 2. RDS is currently `PubliclyAccessible=true` in default VPC.
 3. App Runner API access works in `eu-west-2`.
-4. No existing App Runner service is present yet.
-5. VPC connector `proxy-api-vpc-connector` exists and is `ACTIVE`.
+4. App Runner service `proxy-api` is `RUNNING` (image-based).
+5. VPC connector `proxy-api-vpc-connector-private` is `ACTIVE`.
 
 ## Operational baseline
 1. Logs are reviewed via App Runner Logs and CloudWatch `/aws/apprunner/...` groups.

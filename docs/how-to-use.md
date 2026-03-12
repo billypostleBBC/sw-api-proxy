@@ -24,7 +24,31 @@ export ADMIN_EMAIL="admin1@bbc.co.uk"
 export ADMIN_PASSWORD="<shared-admin-password>"
 ```
 
-## Step 1: Sign In As Admin (Email + Password)
+## Fastest Manual Path: Browser Admin To Smoke Test
+
+1. Open `$BASE_URL/admin` in a browser.
+2. Sign in with your allowlisted admin email and shared password.
+3. In `Projects`:
+   - Create a project if one does not already exist.
+   - If it already exists, use the project ID shown in the table.
+4. In `Rotate project API key`:
+   - Enter the project ID.
+   - Paste the OpenAI API key for that project.
+5. In `Tools & Tokens`:
+   - Create a tool if one does not already exist.
+   - Use the tool ID shown in the tools table.
+6. In `Mint tool token`:
+   - Enter the tool ID.
+   - Mint the token and copy it immediately. It is only shown once.
+7. Run the smoke test:
+
+```bash
+scripts/smoke-proxy.sh "$BASE_URL" "<tool_token>" "gpt-4.1-mini"
+```
+
+If you prefer CLI instead of the browser dashboard, use the API flow below.
+
+## Step 1: Sign In As Admin (CLI)
 
 ```bash
 curl -i -c admin.cookies -X POST "$BASE_URL/admin/auth/login" \
@@ -55,10 +79,10 @@ curl -s -b admin.cookies -X POST "$BASE_URL/admin/projects" \
 
 Response includes project ID: `{"id":123}`
 
-If you need to look up existing IDs (no list endpoint in MVP), query Postgres:
+If the project already exists, look it up via the admin API:
 
 ```bash
-psql "$DATABASE_URL" -c "SELECT id, slug, status FROM projects ORDER BY id;"
+curl -s -b admin.cookies "$BASE_URL/admin/projects?slug=storyworks-prod"
 ```
 
 ## Step 3: Add Or Rotate OpenAI API Key
@@ -111,6 +135,12 @@ Response includes a long-lived token and expiry:
 ```
 
 Store this token server-side only (for example in your tool's env vars).
+
+If the tool already exists, look it up via the admin API:
+
+```bash
+curl -s -b admin.cookies "$BASE_URL/admin/tools?slug=storyworks-ai-assistant&projectId=$PROJECT_ID"
+```
 
 ## Step 5: Point A Server Tool To The Proxy
 

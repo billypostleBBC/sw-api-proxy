@@ -43,8 +43,7 @@ TypeScript Fastify service that proxies OpenAI API calls for internal tools with
 4. Keep error payload shape consistent with `sendError`:
    - `{ error, message, details? }`
 5. Preserve existing auth token primitives:
-   - Opaque tokens for magic links/sessions/tool tokens.
-   - JWT (HS256) for short-lived client tickets.
+   - Opaque tokens for admin sessions and tool tokens.
 6. Preserve DB-first approach:
    - Additive schema changes via `src/db/migrations.ts`.
    - Keep data access in `src/db/repo.ts`.
@@ -90,3 +89,4 @@ Any meaningful requirement change must update this file in the same change set, 
 - 2026-02-19: Replaced generic charter with repo-specific project law after full repo scan (Fastify + Postgres + AWS KMS/SES + OpenAI proxy).
 - 2026-03-09: Pivoted deployment model from ECS/ALB to App Runner with SSM-backed runtime secrets; moved ECS artifacts to legacy path.
 - 2026-03-10: Removed SES and magic-link auth/runtime dependencies; switched MVP auth to allowlisted admin email + shared password with session cookies and tool-token proxy access.
+- 2026-03-12: Standardized production admin auth secret on `ADMIN_PASSWORD_HASH` (with local `ADMIN_PASSWORD` fallback) and completed image-based App Runner deployment path for `proxy-api`.

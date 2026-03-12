@@ -8,18 +8,20 @@
 3. Required SSM parameters exist:
    - `/proxy-api/DATABASE_URL`
    - `/proxy-api/KMS_KEY_ID`
-   - `/proxy-api/ADMIN_PASSWORD`
+   - `/proxy-api/ADMIN_PASSWORD_HASH`
    - `/proxy-api/ADMIN_EMAIL_ALLOWLIST`
    - `/proxy-api/CORS_ALLOWED_ORIGINS`
 4. VPC connector exists and is approved for target subnets/security groups.
 5. RDS connectivity from connector SG to DB SG/port is in place.
 6. App Runner API access works for this principal in `eu-west-2`.
-7. Confirmed baseline in `eu-west-2`: no existing App Runner service yet.
+7. Confirmed baseline in `eu-west-2`: `proxy-api` is `RUNNING`.
 
 ## 2) Build and publish
 1. Build image from `infra/Dockerfile`.
-2. Tag with immutable tag (`git sha` or timestamp).
-3. Push to ECR.
+2. Build explicitly for `linux/amd64`.
+3. Tag with an immutable tag such as `<timestamp>-<git-sha>-amd64`.
+4. Do not deploy mutable tags such as `latest`.
+5. Push to ECR.
 
 ## 3) Deploy
 1. Copy `infra/apprunner/service.template.json` to env-specific file.
@@ -44,5 +46,5 @@
 4. Keep failed tag for investigation; do not reuse mutable tags.
 
 ## 7) Infra decisions to confirm
-1. NAT and/or VPC endpoint strategy for selected `VPC` egress mode.
-2. Final RDS reachability posture (currently discovered as `PubliclyAccessible=true`).
+1. Final RDS reachability posture (currently discovered as `PubliclyAccessible=true`).
+2. Whether to keep the single-AZ NAT as an MVP trade-off or add one NAT per AZ later.

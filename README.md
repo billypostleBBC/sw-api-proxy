@@ -34,6 +34,7 @@ On startup, DB migrations run automatically.
 
 ## How to use
 - Step-by-step setup and integration guide: `docs/how-to-use.md`
+- Fastest manual path for admin login, tool-token minting, and smoke test: `docs/how-to-use.md`
 - Repeatable onboarding template for any tool: `docs/tool-onboarding-template.md`
 - Alt-text Generator migration runbook: `docs/alt-text-generator-onboarding.md`
 - Key provisioning and rotation guide: `docs/proxy-key-provisioning.md`

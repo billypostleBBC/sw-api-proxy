@@ -1,5 +1,6 @@
 import { makeOpaqueToken, parseOpaqueToken, sha256 } from "../utils/crypto.js";
 const ADMIN_COOKIE = "admin_session";
+const USER_COOKIE = "user_session";
 export class AuthService {
     repo;
     sessionTtlHours;
@@ -28,7 +29,7 @@ export class AuthService {
         return session?.subjectEmail ?? null;
     }
     static setSessionCookie(reply, scope, token) {
-        const name = scope === "admin" ? ADMIN_COOKIE : "user_session";
+        const name = scope === "admin" ? ADMIN_COOKIE : USER_COOKIE;
         reply.setCookie(name, token, {
             httpOnly: true,
             secure: true,
@@ -39,7 +40,7 @@ export class AuthService {
     static getSessionFromCookie(request, scope) {
         return scope === "admin"
             ? request.cookies[ADMIN_COOKIE]
-            : request.cookies["user_session"];
+            : request.cookies[USER_COOKIE];
     }
     static makeToolToken() {
         const opaque = makeOpaqueToken("tt");
