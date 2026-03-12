@@ -19,17 +19,21 @@ Use these when you need a narrower operational guide:
 5. Production runtime may store `ADMIN_PASSWORD_HASH`, but operators still sign in with the plaintext shared password.
 
 ```bash
-export BASE_URL="https://proxy.example.com"
+export BASE_URL="https://nnm7du2h7j.eu-west-2.awsapprunner.com"
+export ADMIN_URL="$BASE_URL/admin"
+export PROXY_BASE_URL="$BASE_URL/proxy/v1"
 export ADMIN_EMAIL="admin1@bbc.co.uk"
 export ADMIN_PASSWORD="<shared-admin-password>"
 export COOKIE_JAR="${TMPDIR:-/tmp}/proxy-api-admin.cookie"
 ```
 
+Current hosted admin dashboard: `https://nnm7du2h7j.eu-west-2.awsapprunner.com/admin`
+
 ## Fastest Manual Path: Browser Admin To Smoke Test
 
 Keep using this path while the admin UI is still being refined. It is the fastest operator flow for one-off setup, rotation, and smoke checks.
 
-1. Open `$BASE_URL/admin` in a browser.
+1. Open `$ADMIN_URL` in a browser.
 2. Sign in with your allowlisted admin email and shared password.
 3. In `Projects`:
    - Create a project if one does not already exist.

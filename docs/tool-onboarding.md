@@ -16,7 +16,9 @@ Do not use this when:
 ## Required inputs
 
 ```bash
-export BASE_URL="https://proxy.example.com"
+export BASE_URL="https://nnm7du2h7j.eu-west-2.awsapprunner.com"
+export ADMIN_URL="$BASE_URL/admin"
+export PROXY_BASE_URL="$BASE_URL/proxy/v1"
 export ADMIN_EMAIL="admin@bbc.co.uk"
 export ADMIN_PASSWORD="<shared-admin-password>"
 export COOKIE_JAR="${TMPDIR:-/tmp}/proxy-api-admin.cookie"
@@ -34,16 +36,19 @@ export OPENAI_API_KEY="sk-..."
 ```
 
 Notes:
-1. `PROJECT_SLUG` should follow `<tool-slug>-<env>`.
-2. `OPENAI_API_KEY` is the raw project OpenAI key that the proxy will encrypt and store.
-3. Operators sign in with the plaintext shared admin password, even if production runtime is configured with `ADMIN_PASSWORD_HASH`.
-4. Default cookie jar follows the actual script behavior: `${TMPDIR:-/tmp}/proxy-api-admin.cookie`.
+1. `BASE_URL` is the deployed service root.
+2. `ADMIN_URL` is the admin dashboard URL. Current hosted value: `https://nnm7du2h7j.eu-west-2.awsapprunner.com/admin`.
+3. `PROXY_BASE_URL` is the proxy root your tool will call. Current hosted value: `https://nnm7du2h7j.eu-west-2.awsapprunner.com/proxy/v1`.
+4. `PROJECT_SLUG` should follow `<tool-slug>-<env>`.
+5. `OPENAI_API_KEY` is the raw project OpenAI key that the proxy will encrypt and store.
+6. Operators sign in with the plaintext shared admin password, even if production runtime is configured with `ADMIN_PASSWORD_HASH`.
+7. Default cookie jar follows the actual script behavior: `${TMPDIR:-/tmp}/proxy-api-admin.cookie`.
 
 ## Fast manual option
 
 Keep this path available while the admin dashboard UI is still being refined.
 
-1. Open `$BASE_URL/admin` in a browser.
+1. Open `$ADMIN_URL` in a browser.
 2. Sign in with your allowlisted admin email and shared password.
 3. Create or find the project.
 4. Rotate the project OpenAI key.
@@ -127,7 +132,7 @@ aws ssm put-parameter \
   --name "$PARAM_BASE/OPENAI_BASE_URL" \
   --type "SecureString" \
   --overwrite \
-  --value "$BASE_URL/proxy/v1"
+  --value "$PROXY_BASE_URL"
 
 aws ssm put-parameter \
   --name "$PARAM_BASE/OPENAI_API_KEY" \
@@ -141,7 +146,7 @@ aws ssm put-parameter \
 Backend services should use:
 
 ```bash
-OPENAI_BASE_URL=https://<proxy-host>/proxy/v1
+OPENAI_BASE_URL="$PROXY_BASE_URL"
 OPENAI_API_KEY=<tool bearer token>
 ```
 
