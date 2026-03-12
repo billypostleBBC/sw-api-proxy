@@ -6,7 +6,9 @@
     "test": "vitest run",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/app.js",
+    "start:relay": "node dist/relay-app.js",
     "dev": "tsx watch src/app.ts",
+    "dev:relay": "tsx watch src/relay-app.ts",
     "test:watch": "vitest"
   },
   "keywords": [],
@@ -17,12 +19,10 @@
   "type": "module",
   "dependencies": {
     "@aws-sdk/client-kms": "^3.993.0",
-    "@aws-sdk/client-ses": "^3.993.0",
     "@aws-sdk/client-ssm": "^3.993.0",
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.2.0",
     "fastify": "^5.7.4",
-    "jose": "^6.1.3",
     "pg": "^8.18.0",
     "pino": "^10.3.1",
     "undici": "^7.22.0",

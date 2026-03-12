@@ -1,0 +1,50 @@
+{
+  "ServiceArn": "arn:aws:apprunner:eu-west-2:445816555466:service/proxy-api/<service-id>",
+  "SourceConfiguration": {
+    "ImageRepository": {
+      "ImageIdentifier": "445816555466.dkr.ecr.eu-west-2.amazonaws.com/proxy-api:<image-tag>",
+      "ImageRepositoryType": "ECR",
+      "ImageConfiguration": {
+        "Port": "3000",
+        "RuntimeEnvironmentVariables": {
+          "AWS_REGION": "eu-west-2",
+          "RELAY_PUBLIC_BASE_URL": "https://relay.example.com"
+        },
+        "RuntimeEnvironmentSecrets": {
+          "DATABASE_URL": "/proxy-api/DATABASE_URL",
+          "KMS_KEY_ID": "/proxy-api/KMS_KEY_ID",
+          "ADMIN_PASSWORD_HASH": "/proxy-api/ADMIN_PASSWORD_HASH",
+          "ADMIN_EMAIL_ALLOWLIST": "/proxy-api/ADMIN_EMAIL_ALLOWLIST",
+          "CORS_ALLOWED_ORIGINS": "/proxy-api/CORS_ALLOWED_ORIGINS"
+        }
+      }
+    },
+    "AutoDeploymentsEnabled": false,
+    "AuthenticationConfiguration": {
+      "AccessRoleArn": "arn:aws:iam::445816555466:role/proxy-api-apprunner-ecr-access-role"
+    }
+  },
+  "InstanceConfiguration": {
+    "Cpu": "1024",
+    "Memory": "2048",
+    "InstanceRoleArn": "arn:aws:iam::445816555466:role/proxy-api-apprunner-instance-role"
+  },
+  "HealthCheckConfiguration": {
+    "Protocol": "HTTP",
+    "Path": "/health",
+    "Interval": 10,
+    "Timeout": 5,
+    "HealthyThreshold": 1,
+    "UnhealthyThreshold": 5
+  },
+  "NetworkConfiguration": {
+    "IngressConfiguration": {
+      "IsPubliclyAccessible": true
+    },
+    "EgressConfiguration": {
+      "EgressType": "VPC",
+      "VpcConnectorArn": "arn:aws:apprunner:eu-west-2:445816555466:vpcconnector/proxy-api-vpc-connector-private/1/6a796c78d4ca44e6aed6785f74151185"
+    },
+    "IpAddressType": "IPV4"
+  }
+}

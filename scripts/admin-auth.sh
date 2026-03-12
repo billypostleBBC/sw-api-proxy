@@ -1,47 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 1 || $# -gt 2 ]]; then
+if [[ $# -lt 2 || $# -gt 3 ]]; then
   cat <<'USAGE'
 Usage:
-  scripts/admin-auth.sh <base_url> [cookie_jar_path]
+  scripts/admin-auth.sh <base_url> <admin_email> [cookie_jar_path]
 
 Example:
-  scripts/admin-auth.sh https://proxy.example.com
+  scripts/admin-auth.sh https://proxy.example.com admin@bbc.co.uk
 USAGE
   exit 1
 fi
 
 BASE_URL="$1"
-COOKIE_JAR="${2:-${TMPDIR:-/tmp}/proxy-api-admin.cookie}"
+ADMIN_EMAIL="$2"
+COOKIE_JAR="${3:-${TMPDIR:-/tmp}/proxy-api-admin.cookie}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 
 if [[ -z "$ADMIN_PASSWORD" ]]; then
   read -r -s -p "Admin password: " ADMIN_PASSWORD
   echo
 fi
-
-if [[ -z "$ADMIN_PASSWORD" ]]; then
+[[ -n "$ADMIN_PASSWORD" ]] || {
   echo "Admin password is required."
   exit 1
-fi
+}
 
 BODY_FILE=$(mktemp)
 trap 'rm -f "$BODY_FILE"' EXIT
-
-read -r -s -p "Admin password: " ADMIN_PASSWORD
-echo
-
-LOGIN_PAYLOAD=$(node -e 'const [email,password]=process.argv.slice(1); process.stdout.write(JSON.stringify({email,password}));' "$ADMIN_EMAIL" "$ADMIN_PASSWORD")
 
 LOGIN_STATUS=$(curl -sS -o "$BODY_FILE" -w "%{http_code}" \
   -X POST "$BASE_URL/admin/auth/login" \
   -H "Content-Type: application/json" \
   -c "$COOKIE_JAR" \
-  --data "$LOGIN_PAYLOAD")
+  --data "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")
 
 if [[ "$LOGIN_STATUS" != "200" ]]; then
-  echo "Failed to login as admin (HTTP $LOGIN_STATUS)."
+  echo "Failed to sign in as admin (HTTP $LOGIN_STATUS)."
   cat "$BODY_FILE"
   exit 1
 fi

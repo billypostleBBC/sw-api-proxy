@@ -21,14 +21,12 @@ async function buildProxyTestApp() {
     findAuthByToolToken: vi.fn().mockResolvedValue(makeAuthContext()),
     getActiveProjectKey: vi.fn()
   };
-  const ticketService = { verifyTicket: vi.fn() };
   const kmsService = { decrypt: vi.fn() };
   const openaiClient = { request: vi.fn() };
   const limitService = { enforce: vi.fn().mockResolvedValue(undefined) };
   const usageService = { log: vi.fn().mockResolvedValue(undefined) };
 
   app.decorate("repo", repo as any);
-  app.decorate("ticketService", ticketService as any);
   app.decorate("kmsService", kmsService as any);
   app.decorate("openaiClient", openaiClient as any);
 

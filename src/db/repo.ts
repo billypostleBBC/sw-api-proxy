@@ -38,30 +38,6 @@ type ToolRow = {
 export class Repo {
   constructor(private readonly pool: pg.Pool) {}
 
-  async syncAdminPasswordHash(actorId: "admin", passwordHash: string): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO admins (email, status, password_hash)
-       VALUES ($1, 'active', $2)
-       ON CONFLICT (email) DO UPDATE SET
-         status = 'active',
-         password_hash = EXCLUDED.password_hash,
-         updated_at = now()`,
-      [actorId, passwordHash]
-    );
-  }
-
-  async getAdminPasswordHash(actorId: "admin"): Promise<string | null> {
-    const result = await this.pool.query<{ password_hash: string | null }>(
-      `SELECT password_hash
-       FROM admins
-       WHERE email = $1 AND status = 'active'
-       LIMIT 1`,
-      [actorId]
-    );
-    const row = result.rows[0];
-    return row?.password_hash ?? null;
-  }
-
   async upsertAdmins(emails: string[]): Promise<void> {
     for (const email of emails) {
       await this.pool.query(
@@ -210,6 +186,27 @@ export class Repo {
     }));
   }
 
+  async getToolById(toolId: number): Promise<{ id: number; slug: string; projectId: number; mode: string; status: string } | null> {
+    const result = await this.pool.query<ToolRow>(
+      `SELECT id, slug, project_id, mode, status
+       FROM tools
+       WHERE id = $1`,
+      [toolId]
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      slug: row.slug,
+      projectId: row.project_id,
+      mode: row.mode,
+      status: row.status
+    };
+  }
+
   async createToolToken(input: {
     tokenId: string;
     tokenHash: string;
@@ -274,15 +271,6 @@ export class Repo {
       rpmCap: token.rpm_cap,
       dailyTokenCap: Number(token.daily_token_cap)
     };
-  }
-
-  async upsertUser(email: string): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO users (email, status)
-       VALUES ($1, 'active')
-       ON CONFLICT (email) DO UPDATE SET status = 'active', updated_at = now()`,
-      [email]
-    );
   }
 
   async createSession(input: {

@@ -7,7 +7,12 @@ async function buildWebAdminTestApp() {
   const app = Fastify();
   await app.register(cookie);
 
-  app.decorate("env", {} as any);
+  app.decorate(
+    "env",
+    {
+      adminEmailAllowlist: new Set(["admin@bbc.com"])
+    } as any
+  );
 
   const authService = {
     getSessionEmail: vi.fn().mockResolvedValue(null)
@@ -36,7 +41,7 @@ describe("web admin routes", () => {
 
   it("renders dashboard shell when admin session is valid", async () => {
     const { app, authService } = await buildWebAdminTestApp();
-    authService.getSessionEmail.mockResolvedValue("admin");
+    authService.getSessionEmail.mockResolvedValue("admin@bbc.com");
 
     const response = await app.inject({
       method: "GET",
@@ -49,7 +54,7 @@ describe("web admin routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toContain("text/html");
     expect(response.body).toContain("Proxy Admin Dashboard");
-    expect(response.body).toContain("Signed in as admin");
+    expect(response.body).toContain("Signed in as admin@bbc.com");
     expect(response.body).toContain("createProjectForm");
     await app.close();
   });

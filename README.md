@@ -1,16 +1,19 @@
-# Proxy API (OpenAI Key Proxy)
+# Proxy API (OpenAI Proxy + Shared Relay)
 
-MVP TypeScript service for securely proxying OpenAI requests to internal tools.
+MVP TypeScript services for securely routing OpenAI requests to internal tools and distributed clients.
 
 ## Features
 - KMS-encrypted OpenAI key storage per project.
 - Admin auth via allowlisted email + shared password.
-- Tool-token-backed short-lived client ticket issuance.
+- Shared relay auth via BBC email + shared password with daily bearer sessions.
 - Tool auth via long-lived hashed tokens.
 - Proxy endpoints:
   - `POST /proxy/v1/responses`
   - `POST /proxy/v1/embeddings`
   - `GET /proxy/v1/models`
+- Relay endpoints:
+  - `POST /v1/auth/login`
+  - `POST /v1/tools/:toolSlug/responses`
 - Rate and cap enforcement per project.
 - Usage and audit logs in Postgres.
 
@@ -21,6 +24,7 @@ MVP TypeScript service for securely proxying OpenAI requests to internal tools.
    - `cp .env.example .env`
 3. Run locally:
    - `npm run dev`
+   - `npm run dev:relay`
 
 On startup, DB migrations run automatically.
 
@@ -28,11 +32,14 @@ On startup, DB migrations run automatically.
 - Build: `npm run build`
 - Tests: `npm test`
 
+## Dependency installs
+- Dependencies are not committed.
+- Local development: run `npm install`.
+- CI/clean installs: use `npm ci` to install exactly from `package-lock.json` and fail if lockfile and manifest drift.
+
 ## How to use
-- Step-by-step setup and integration guide: `docs/how-to-use.md`
-- Admin dashboard guide (web UI): `docs/admin-dashboard.md`
-- Repeatable onboarding template for any tool: `docs/tool-onboarding-template.md`
-- Alt-text Generator migration runbook: `docs/alt-text-generator-onboarding.md`
+- Admin dashboard and CLI operator guide: `docs/how-to-use.md`
+- Repeatable onboarding runbook for any tool: `docs/tool-onboarding.md`
 - Key provisioning and rotation guide: `docs/proxy-key-provisioning.md`
 
 ## Core endpoints
@@ -47,16 +54,23 @@ On startup, DB migrations run automatically.
 - `POST /admin/tools/:toolId/tokens/:tokenId/revoke`
 - `GET /admin/usage`
 
-### Ticket auth
-- `POST /auth/client-ticket`
-
 ### Proxy
 - `POST /proxy/v1/responses`
 - `POST /proxy/v1/embeddings`
 - `GET /proxy/v1/models`
 
+### Relay
+- `POST /v1/auth/login`
+- `POST /v1/tools/:toolSlug/responses`
+
 ## Deployment
-See:
+Primary deployment (App Runner):
 - `infra/README.md`
-- `infra/ecs-task-definition.json`
+- `infra/apprunner/service.template.json`
+- `infra/apprunner/update-service.template.json`
+- `infra/apprunner/relay.service.template.json`
+- `infra/apprunner/relay.update-service.template.json`
+- `docs/deployment-checklist.md`
 - `infra/Dockerfile`
+
+Historical deployment artifacts remain under `infra/legacy/ecs/` for audit reference only.

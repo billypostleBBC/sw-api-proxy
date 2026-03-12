@@ -2,9 +2,10 @@ import type { FastifyInstance } from "fastify";
 import { AuthService } from "../auth/service.js";
 
 const errorMessages: Record<string, string> = {
-  invalid_credentials: "Invalid admin credentials.",
+  invalid_credentials: "Invalid admin credentials. Check email and password.",
+  login_failed: "Unable to sign in. Please try again.",
+  rate_limited: "Too many login attempts. Please wait a minute and try again.",
   session_expired: "Your admin session has expired. Please sign in again.",
-  auth_failed: "Invalid admin credentials.",
   signed_out: "You have been signed out."
 };
 
@@ -60,8 +61,8 @@ function loginPageHtml(errorKey?: string): string {
           <div class="card-body">
             <form id="adminLoginForm" class="vstack gap-3">
               <div>
-                <label for="adminPassword" class="form-label">Admin password</label>
-                <input id="adminPassword" name="password" type="password" class="form-control" required />
+                <label for="adminEmail" class="form-label">Admin email</label>
+                <input id="adminEmail" name="email" type="email" class="form-control" required />
               </div>
               <div>
                 <label for="adminPassword" class="form-label">Password</label>
@@ -119,7 +120,7 @@ function loginPageHtml(errorKey?: string): string {
 
         if (response.status !== 200) {
           var text = await response.text();
-          var message = "Login failed.";
+          var message = "Failed to sign in.";
           if (text) {
             try {
               var parsed = JSON.parse(text);
@@ -133,7 +134,7 @@ function loginPageHtml(errorKey?: string): string {
 
         window.location.href = "/admin";
       } catch (error) {
-        showStatus("danger", error instanceof Error ? error.message : "Login failed.");
+        showStatus("danger", error instanceof Error ? error.message : "Failed to sign in.");
       } finally {
         if (submitButton) {
           submitButton.disabled = false;
@@ -273,6 +274,12 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
               <div class="small fw-semibold mb-1">Store this token now (it will not be shown again):</div>
               <code id="mintedTokenValue" class="small d-block text-break"></code>
               <div class="small mt-1">Expires: <span id="mintedTokenExpiry"></span></div>
+              <div id="mintedRelayUrlGroup" class="mt-2" hidden>
+                <div class="small fw-semibold mb-1">Relay responses URL</div>
+                <code id="mintedRelayUrlValue" class="small d-block text-break"></code>
+                <button id="copyMintedRelayUrlBtn" type="button" class="btn btn-sm btn-outline-dark mt-2">Copy relay URL</button>
+                <div id="copyRelayUrlMessage" class="small mt-1"></div>
+              </div>
               <button id="copyMintedTokenBtn" type="button" class="btn btn-sm btn-dark mt-2">Copy token</button>
               <div id="copyTokenMessage" class="small mt-1"></div>
             </div>
@@ -303,10 +310,11 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
                 <th>Project ID</th>
                 <th>Mode</th>
                 <th>Status</th>
+                <th>Relay responses URL</th>
               </tr>
             </thead>
             <tbody id="toolRows">
-              <tr><td colspan="5" class="text-muted">Loading tools...</td></tr>
+              <tr><td colspan="6" class="text-muted">Loading tools...</td></tr>
             </tbody>
           </table>
         </div>
@@ -368,6 +376,10 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
     var mintedTokenExpiry = document.getElementById("mintedTokenExpiry");
     var copyTokenMessage = document.getElementById("copyTokenMessage");
     var copyMintedTokenBtn = document.getElementById("copyMintedTokenBtn");
+    var mintedRelayUrlGroup = document.getElementById("mintedRelayUrlGroup");
+    var mintedRelayUrlValue = document.getElementById("mintedRelayUrlValue");
+    var copyMintedRelayUrlBtn = document.getElementById("copyMintedRelayUrlBtn");
+    var copyRelayUrlMessage = document.getElementById("copyRelayUrlMessage");
 
     function esc(value) {
       return String(value == null ? "" : value)
@@ -468,17 +480,21 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
     function renderTools(tools) {
       if (!toolRows) return;
       if (!tools.length) {
-        toolRows.innerHTML = '<tr><td colspan="5" class="text-muted">No tools found.</td></tr>';
+        toolRows.innerHTML = '<tr><td colspan="6" class="text-muted">No tools found.</td></tr>';
         return;
       }
       toolRows.innerHTML = tools
         .map(function (tool) {
+          var relayUrlCell = tool.relayResponsesUrl
+            ? '<code class="small text-break">' + esc(tool.relayResponsesUrl) + "</code>"
+            : "-";
           return "<tr>" +
             "<td>" + esc(tool.id) + "</td>" +
             "<td>" + esc(tool.slug) + "</td>" +
             "<td>" + esc(tool.projectId) + "</td>" +
             "<td>" + esc(tool.mode) + "</td>" +
             "<td>" + esc(tool.status) + "</td>" +
+            "<td>" + relayUrlCell + "</td>" +
           "</tr>";
         })
         .join("");
@@ -637,12 +653,16 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
           mode: String(formData.get("mode") || "server")
         };
         try {
-          await requestJson("/admin/tools", {
+          var data = await requestJson("/admin/tools", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
           });
-          setMessage("toolCreateMessage", "success", "Tool created.");
+          setMessage(
+            "toolCreateMessage",
+            "success",
+            data.relayResponsesUrl ? "Tool created. Relay URL is now available in the tools table." : "Tool created."
+          );
           await loadTools();
           createToolForm.reset();
         } catch (error) {
@@ -675,6 +695,12 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
             mintedTokenExpiry.textContent = formatDate(data.expiresAt);
             mintedTokenPanel.hidden = false;
           }
+          if (mintedRelayUrlGroup && mintedRelayUrlValue && copyRelayUrlMessage) {
+            var relayUrl = String(data.relayResponsesUrl || "");
+            mintedRelayUrlValue.textContent = relayUrl;
+            mintedRelayUrlGroup.hidden = !relayUrl;
+            copyRelayUrlMessage.textContent = "";
+          }
           mintTokenForm.reset();
         } catch (error) {
           setMessage("tokenMintMessage", "danger", error instanceof Error ? error.message : "Failed to mint token.");
@@ -695,6 +721,23 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
           copyTokenMessage.textContent = "Token copied.";
         } catch (_error) {
           copyTokenMessage.textContent = "Clipboard copy failed. Copy manually.";
+        }
+      });
+    }
+
+    if (copyMintedRelayUrlBtn) {
+      copyMintedRelayUrlBtn.addEventListener("click", async function () {
+        if (!mintedRelayUrlValue || !copyRelayUrlMessage) return;
+        var relayUrl = String(mintedRelayUrlValue.textContent || "");
+        if (!relayUrl) {
+          copyRelayUrlMessage.textContent = "No relay URL to copy.";
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(relayUrl);
+          copyRelayUrlMessage.textContent = "Relay URL copied.";
+        } catch (_error) {
+          copyRelayUrlMessage.textContent = "Clipboard copy failed. Copy manually.";
         }
       });
     }
@@ -765,7 +808,7 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
     refreshAll().catch(function (error) {
       var message = error instanceof Error ? error.message : "Failed to load dashboard data.";
       if (projectRows) projectRows.innerHTML = '<tr><td colspan="8" class="text-danger">' + esc(message) + "</td></tr>";
-      if (toolRows) toolRows.innerHTML = '<tr><td colspan="5" class="text-danger">' + esc(message) + "</td></tr>";
+      if (toolRows) toolRows.innerHTML = '<tr><td colspan="6" class="text-danger">' + esc(message) + "</td></tr>";
       if (usageRows) usageRows.innerHTML = '<tr><td colspan="11" class="text-danger">' + esc(message) + "</td></tr>";
     });
   })();`;
@@ -784,7 +827,7 @@ export function registerWebAdminRoutes(app: FastifyInstance, deps: { authService
     }
 
     const email = await deps.authService.getSessionEmail("admin", session);
-    if (email !== "admin") {
+    if (!email || !app.env.adminEmailAllowlist?.has(email.toLowerCase())) {
       reply.clearCookie("admin_session", { path: "/" });
       return reply.type("text/html").send(loginPageHtml(errorKey ?? "session_expired"));
     }

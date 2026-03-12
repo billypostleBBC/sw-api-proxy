@@ -1,14 +1,10 @@
-import { createHash } from "node:crypto";
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import { describe, expect, it, vi } from "vitest";
 import { registerAdminRoutes } from "../src/admin/routes.js";
+import { sha256 } from "../src/utils/crypto.js";
 
-function sha256(input: string): string {
-  return createHash("sha256").update(input).digest("hex");
-}
-
-async function buildAdminTestApp() {
+async function buildAdminTestApp(options?: { relayPublicBaseUrl?: string }) {
   const app = Fastify();
   await app.register(cookie);
 
@@ -16,20 +12,29 @@ async function buildAdminTestApp() {
     "env",
     {
       adminEmailAllowlist: new Set(["admin@bbc.co.uk"]),
-      adminPassword: "super-secret-pass",
-      toolTokenTtlDays: 90
+      adminPasswordHash: sha256("shared-admin-password"),
+      toolTokenTtlDays: 90,
+      relayPublicBaseUrl: options?.relayPublicBaseUrl
     } as any
   );
   app.decorate("kmsService", { encrypt: vi.fn() } as any);
 
   const authService = {
-    createSession: vi.fn().mockResolvedValue("st.created.secret"),
+    createSession: vi.fn().mockResolvedValue("st.login.secret"),
     getSessionEmail: vi.fn().mockResolvedValue("admin@bbc.co.uk")
   };
   const repo = {
-    getAdminPasswordHash: vi.fn().mockResolvedValue(sha256("correct-password")),
     listProjects: vi.fn().mockResolvedValue([]),
-    listTools: vi.fn().mockResolvedValue([])
+    listTools: vi.fn().mockResolvedValue([]),
+    createTool: vi.fn().mockResolvedValue({ id: 11 }),
+    getToolById: vi.fn().mockResolvedValue({
+      id: 8,
+      slug: "story-assistant-server",
+      projectId: 10,
+      mode: "server",
+      status: "active"
+    }),
+    createToolToken: vi.fn().mockResolvedValue(undefined)
   };
   const usageService = { audit: vi.fn() };
 
@@ -43,34 +48,36 @@ async function buildAdminTestApp() {
   return { app, repo, authService };
 }
 
-describe("admin discovery routes", () => {
-  it("logs in with allowlisted email + password", async () => {
+describe("admin login route", () => {
+  it("creates admin session for allowlisted email and matching password", async () => {
     const { app, authService } = await buildAdminTestApp();
     const response = await app.inject({
       method: "POST",
       url: "/admin/auth/login",
       payload: {
         email: "admin@bbc.co.uk",
-        password: "super-secret-pass"
-      }
+        password: "shared-admin-password"
+      },
+      remoteAddress: "10.0.0.1"
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
     expect(authService.createSession).toHaveBeenCalledWith("admin", "admin@bbc.co.uk");
-    expect(response.cookies.some((cookieItem) => cookieItem.name === "admin_session")).toBe(true);
+    expect(response.headers["set-cookie"]).toContain("admin_session=");
     await app.close();
   });
 
-  it("rejects invalid admin credentials", async () => {
+  it("rejects non-allowlisted email", async () => {
     const { app } = await buildAdminTestApp();
     const response = await app.inject({
       method: "POST",
       url: "/admin/auth/login",
       payload: {
-        email: "admin@bbc.co.uk",
-        password: "wrong-password"
-      }
+        email: "someone@bbc.co.uk",
+        password: "shared-admin-password"
+      },
+      remoteAddress: "10.0.0.2"
     });
 
     expect(response.statusCode).toBe(401);
@@ -81,6 +88,80 @@ describe("admin discovery routes", () => {
     await app.close();
   });
 
+  it("rejects wrong password", async () => {
+    const { app } = await buildAdminTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/auth/login",
+      payload: {
+        email: "admin@bbc.co.uk",
+        password: "wrong-password"
+      },
+      remoteAddress: "10.0.0.3"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: "unauthorized",
+      message: "Invalid admin credentials"
+    });
+    await app.close();
+  });
+
+  it("returns 400 on invalid payload", async () => {
+    const { app } = await buildAdminTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/auth/login",
+      payload: {
+        email: "bad-email",
+        password: ""
+      },
+      remoteAddress: "10.0.0.4"
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe("bad_request");
+    await app.close();
+  });
+
+  it("rate limits repeated failed attempts from the same ip", async () => {
+    const { app } = await buildAdminTestApp();
+
+    for (let i = 0; i < 5; i += 1) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/admin/auth/login",
+        payload: {
+          email: "admin@bbc.co.uk",
+          password: "wrong-password"
+        },
+        remoteAddress: "10.0.0.5"
+      });
+      expect(response.statusCode).toBe(401);
+    }
+
+    const limited = await app.inject({
+      method: "POST",
+      url: "/admin/auth/login",
+      payload: {
+        email: "admin@bbc.co.uk",
+        password: "wrong-password"
+      },
+      remoteAddress: "10.0.0.5"
+    });
+
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json()).toEqual({
+      error: "rate_limit_exceeded",
+      message: "Too many login attempts",
+      details: { retryAfterSeconds: 60 }
+    });
+    await app.close();
+  });
+});
+
+describe("admin discovery routes", () => {
   it("requires admin session for GET /admin/projects", async () => {
     const { app } = await buildAdminTestApp();
     const response = await app.inject({
@@ -189,6 +270,97 @@ describe("admin discovery routes", () => {
         }
       ]
     });
+    await app.close();
+  });
+
+  it("includes derived relay URLs when relay base URL is configured", async () => {
+    const { app, repo } = await buildAdminTestApp({
+      relayPublicBaseUrl: "https://relay.example.com"
+    });
+    repo.listTools.mockResolvedValue([
+      {
+        id: 8,
+        slug: "story-assistant-server",
+        projectId: 10,
+        mode: "server",
+        status: "active"
+      }
+    ]);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/tools",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      tools: [
+        {
+          id: 8,
+          slug: "story-assistant-server",
+          projectId: 10,
+          mode: "server",
+          status: "active",
+          relayResponsesUrl: "https://relay.example.com/v1/tools/story-assistant-server/responses"
+        }
+      ]
+    });
+    await app.close();
+  });
+
+  it("returns relay URL when creating a tool", async () => {
+    const { app, repo } = await buildAdminTestApp({
+      relayPublicBaseUrl: "https://relay.example.com"
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/tools",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      },
+      payload: {
+        slug: "story-assistant-server",
+        projectId: 10,
+        mode: "server"
+      }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(repo.createTool).toHaveBeenCalledWith({
+      slug: "story-assistant-server",
+      projectId: 10,
+      mode: "server"
+    });
+    expect(response.json()).toEqual({
+      id: 11,
+      relayResponsesUrl: "https://relay.example.com/v1/tools/story-assistant-server/responses"
+    });
+    await app.close();
+  });
+
+  it("returns relay URL alongside minted tool token", async () => {
+    const { app, repo } = await buildAdminTestApp({
+      relayPublicBaseUrl: "https://relay.example.com"
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/tools/8/tokens",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(repo.getToolById).toHaveBeenCalledWith(8);
+    expect(repo.createToolToken).toHaveBeenCalledTimes(1);
+    expect(response.json().relayResponsesUrl).toBe("https://relay.example.com/v1/tools/story-assistant-server/responses");
+    expect(response.json().expiresAt).toMatch(/^20\d\d-/);
+    expect(response.json().token).toMatch(/^tt\./);
     await app.close();
   });
 });

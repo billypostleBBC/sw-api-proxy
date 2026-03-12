@@ -1,7 +1,7 @@
 export type Scope = "admin" | "user";
 
 export type AuthContext = {
-  mode: "tool" | "ticket";
+  mode: "tool";
   toolId: number;
   toolSlug: string;
   projectId: number;

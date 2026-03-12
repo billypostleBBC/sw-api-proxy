@@ -4,22 +4,6 @@ export class Repo {
     constructor(pool) {
         this.pool = pool;
     }
-    async syncAdminPasswordHash(actorId, passwordHash) {
-        await this.pool.query(`INSERT INTO admins (email, status, password_hash)
-       VALUES ($1, 'active', $2)
-       ON CONFLICT (email) DO UPDATE SET
-         status = 'active',
-         password_hash = EXCLUDED.password_hash,
-         updated_at = now()`, [actorId, passwordHash]);
-    }
-    async getAdminPasswordHash(actorId) {
-        const result = await this.pool.query(`SELECT password_hash
-       FROM admins
-       WHERE email = $1 AND status = 'active'
-       LIMIT 1`, [actorId]);
-        const row = result.rows[0];
-        return row?.password_hash ?? null;
-    }
     async upsertAdmins(emails) {
         for (const email of emails) {
             await this.pool.query(`INSERT INTO admins (email, status)
@@ -103,6 +87,22 @@ export class Repo {
             status: row.status
         }));
     }
+    async getToolById(toolId) {
+        const result = await this.pool.query(`SELECT id, slug, project_id, mode, status
+       FROM tools
+       WHERE id = $1`, [toolId]);
+        const row = result.rows[0];
+        if (!row) {
+            return null;
+        }
+        return {
+            id: row.id,
+            slug: row.slug,
+            projectId: row.project_id,
+            mode: row.mode,
+            status: row.status
+        };
+    }
     async createToolToken(input) {
         await this.pool.query(`INSERT INTO tool_tokens (id, tool_id, token_hash, expires_at, status)
        VALUES ($1, $2, $3, $4, 'active')`, [input.tokenId, input.toolId, input.tokenHash, input.expiresAt]);
@@ -152,11 +152,6 @@ export class Repo {
             rpmCap: token.rpm_cap,
             dailyTokenCap: Number(token.daily_token_cap)
         };
-    }
-    async upsertUser(email) {
-        await this.pool.query(`INSERT INTO users (email, status)
-       VALUES ($1, 'active')
-       ON CONFLICT (email) DO UPDATE SET status = 'active', updated_at = now()`, [email]);
     }
     async createSession(input) {
         await this.pool.query(`INSERT INTO sessions (id, token_hash, subject_email, scope, expires_at)

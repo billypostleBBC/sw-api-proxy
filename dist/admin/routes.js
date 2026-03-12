@@ -1,11 +1,10 @@
 import { z } from "zod";
 import { sendError } from "../utils/http.js";
-import { safeEqualHex, sha256 } from "../utils/crypto.js";
 import { AuthService } from "../auth/service.js";
-const adminLoginSchema = z.object({
-    email: z.string().email(),
-    password: z.string().min(1)
-});
+import { LoginRateLimiter } from "../auth/login-rate-limit.js";
+import { buildRelayResponsesUrl } from "../relay/url.js";
+import { safeEqualHex, sha256 } from "../utils/crypto.js";
+const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) });
 const createProjectSchema = z.object({
     slug: z.string().min(1),
     name: z.string().min(1),
@@ -27,7 +26,12 @@ const toolsQuerySchema = z.object({
     slug: z.string().min(1).optional(),
     projectId: z.coerce.number().int().positive().optional()
 });
-async function requireAdmin(request, authService) {
+function relayResponseForTool(baseUrl, tool) {
+    return {
+        relayResponsesUrl: buildRelayResponsesUrl(baseUrl, tool.slug)
+    };
+}
+async function requireAdmin(app, request, authService) {
     const token = AuthService.getSessionFromCookie(request, "admin");
     if (!token) {
         return null;
@@ -36,26 +40,40 @@ async function requireAdmin(request, authService) {
     if (!email) {
         return null;
     }
-    return email === "admin" ? email : null;
+    return app.env.adminEmailAllowlist?.has(email.toLowerCase()) ? email : null;
 }
 export function registerAdminRoutes(app, deps) {
+    const loginRateLimiter = new LoginRateLimiter();
     app.post("/admin/auth/login", async (request, reply) => {
-        const parsed = adminLoginSchema.safeParse(request.body);
+        const ip = loginRateLimiter.normalizeKey(request.ip);
+        const nowMs = Date.now();
+        const rateLimit = loginRateLimiter.getState(ip, nowMs);
+        if (rateLimit.limited) {
+            return sendError(reply, 429, "rate_limit_exceeded", "Too many login attempts", {
+                retryAfterSeconds: rateLimit.retryAfterSeconds
+            });
+        }
+        const parsed = loginSchema.safeParse(request.body);
         if (!parsed.success) {
+            loginRateLimiter.recordFailure(ip, nowMs);
             return sendError(reply, 400, "bad_request", "Invalid login payload", { issues: parsed.error.issues });
         }
-        const email = parsed.data.email.toLowerCase();
-        const isAllowlisted = app.env.adminEmailAllowlist.has(email);
-        const isPasswordValid = AuthService.verifyPassword(parsed.data.password, app.env.adminPassword);
-        if (!isAllowlisted || !isPasswordValid) {
+        const email = parsed.data.email.toLowerCase().trim();
+        const emailAllowed = app.env.adminEmailAllowlist?.has(email) ?? false;
+        const expectedPasswordHash = app.env.adminPasswordHash ?? "";
+        const suppliedPasswordHash = sha256(parsed.data.password);
+        const passwordValid = safeEqualHex(expectedPasswordHash, suppliedPasswordHash);
+        if (!emailAllowed || !passwordValid) {
+            loginRateLimiter.recordFailure(ip, nowMs);
             return sendError(reply, 401, "unauthorized", "Invalid admin credentials");
         }
         const sessionToken = await deps.authService.createSession("admin", email);
         AuthService.setSessionCookie(reply, "admin", sessionToken);
+        loginRateLimiter.clear(ip);
         return reply.send({ ok: true });
     });
     app.post("/admin/projects", async (request, reply) => {
-        const actorEmail = await requireAdmin(request, deps.authService);
+        const actorEmail = await requireAdmin(app, request, deps.authService);
         if (!actorEmail) {
             return sendError(reply, 401, "unauthorized", "Admin session required");
         }
@@ -75,7 +93,7 @@ export function registerAdminRoutes(app, deps) {
         return reply.code(201).send({ id: created.id });
     });
     app.post("/admin/projects/:projectId/keys", async (request, reply) => {
-        const actorEmail = await requireAdmin(request, deps.authService);
+        const actorEmail = await requireAdmin(app, request, deps.authService);
         if (!actorEmail) {
             return sendError(reply, 401, "unauthorized", "Admin session required");
         }
@@ -106,7 +124,7 @@ export function registerAdminRoutes(app, deps) {
         return reply.code(201).send({ ok: true });
     });
     app.post("/admin/tools", async (request, reply) => {
-        const actorEmail = await requireAdmin(request, deps.authService);
+        const actorEmail = await requireAdmin(app, request, deps.authService);
         if (!actorEmail) {
             return sendError(reply, 401, "unauthorized", "Admin session required");
         }
@@ -123,16 +141,23 @@ export function registerAdminRoutes(app, deps) {
             targetId: String(created.id),
             metadata: parsed.data
         });
-        return reply.code(201).send({ id: created.id });
+        return reply.code(201).send({
+            id: created.id,
+            ...relayResponseForTool(app.env.relayPublicBaseUrl, { slug: parsed.data.slug })
+        });
     });
     app.post("/admin/tools/:toolId/tokens", async (request, reply) => {
-        const actorEmail = await requireAdmin(request, deps.authService);
+        const actorEmail = await requireAdmin(app, request, deps.authService);
         if (!actorEmail) {
             return sendError(reply, 401, "unauthorized", "Admin session required");
         }
         const toolId = Number(request.params.toolId);
         if (!Number.isFinite(toolId) || toolId < 1) {
             return sendError(reply, 400, "bad_request", "Invalid tool id");
+        }
+        const tool = await deps.repo.getToolById(toolId);
+        if (!tool) {
+            return sendError(reply, 404, "not_found", "Tool not found");
         }
         const generated = AuthService.makeToolToken();
         const expiresAt = new Date(Date.now() + app.env.toolTokenTtlDays * 24 * 60 * 60_000);
@@ -150,10 +175,14 @@ export function registerAdminRoutes(app, deps) {
             targetId: generated.tokenId,
             metadata: { toolId, expiresAt: expiresAt.toISOString() }
         });
-        return reply.code(201).send({ token: generated.token, expiresAt: expiresAt.toISOString() });
+        return reply.code(201).send({
+            token: generated.token,
+            expiresAt: expiresAt.toISOString(),
+            ...relayResponseForTool(app.env.relayPublicBaseUrl, tool)
+        });
     });
     app.post("/admin/tools/:toolId/tokens/:tokenId/revoke", async (request, reply) => {
-        const actorEmail = await requireAdmin(request, deps.authService);
+        const actorEmail = await requireAdmin(app, request, deps.authService);
         if (!actorEmail) {
             return sendError(reply, 401, "unauthorized", "Admin session required");
         }
@@ -170,7 +199,7 @@ export function registerAdminRoutes(app, deps) {
         return reply.send({ ok: true });
     });
     app.get("/admin/projects", async (request, reply) => {
-        const actorEmail = await requireAdmin(request, deps.authService);
+        const actorEmail = await requireAdmin(app, request, deps.authService);
         if (!actorEmail) {
             return sendError(reply, 401, "unauthorized", "Admin session required");
         }
@@ -184,7 +213,7 @@ export function registerAdminRoutes(app, deps) {
         return reply.send({ projects });
     });
     app.get("/admin/tools", async (request, reply) => {
-        const actorEmail = await requireAdmin(request, deps.authService);
+        const actorEmail = await requireAdmin(app, request, deps.authService);
         if (!actorEmail) {
             return sendError(reply, 401, "unauthorized", "Admin session required");
         }
@@ -196,10 +225,15 @@ export function registerAdminRoutes(app, deps) {
             slug: parsed.data.slug,
             projectId: parsed.data.projectId
         });
-        return reply.send({ tools });
+        return reply.send({
+            tools: tools.map((tool) => ({
+                ...tool,
+                ...relayResponseForTool(app.env.relayPublicBaseUrl, tool)
+            }))
+        });
     });
     app.get("/admin/usage", async (request, reply) => {
-        const actorEmail = await requireAdmin(request, deps.authService);
+        const actorEmail = await requireAdmin(app, request, deps.authService);
         if (!actorEmail) {
             return sendError(reply, 401, "unauthorized", "Admin session required");
         }
