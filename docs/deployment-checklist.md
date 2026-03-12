@@ -14,7 +14,7 @@
 4. VPC connector exists and is approved for target subnets/security groups.
 5. RDS connectivity from connector SG to DB SG/port is in place.
 6. App Runner API access works for this principal in `eu-west-2`.
-7. Confirmed baseline in `eu-west-2`: `proxy-api` is `RUNNING`.
+7. Target App Runner service name is known.
 
 ## 2) Build and publish
 1. Build image from `infra/Dockerfile`.

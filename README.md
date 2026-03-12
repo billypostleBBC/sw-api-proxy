@@ -33,10 +33,8 @@ On startup, DB migrations run automatically.
 - CI/clean installs: use `npm ci` to install exactly from `package-lock.json` and fail if lockfile and manifest drift.
 
 ## How to use
-- Step-by-step setup and integration guide: `docs/how-to-use.md`
-- Fastest manual path for admin login, tool-token minting, and smoke test: `docs/how-to-use.md`
-- Repeatable onboarding template for any tool: `docs/tool-onboarding-template.md`
-- Alt-text Generator migration runbook: `docs/alt-text-generator-onboarding.md`
+- Admin dashboard and CLI operator guide: `docs/how-to-use.md`
+- Repeatable onboarding runbook for any tool: `docs/tool-onboarding.md`
 - Key provisioning and rotation guide: `docs/proxy-key-provisioning.md`
 
 ## Core endpoints
@@ -61,10 +59,7 @@ Primary deployment (App Runner):
 - `infra/README.md`
 - `infra/apprunner/service.template.json`
 - `infra/apprunner/update-service.template.json`
-- `docs/architecture-app-runner-pivot.md`
 - `docs/deployment-checklist.md`
 - `infra/Dockerfile`
 
-Legacy ECS artifacts (archived, not primary):
-- `infra/legacy/ecs/README.md`
-- `infra/legacy/ecs/ecs-task-definition.json`
+Historical deployment artifacts remain under `infra/legacy/ecs/` for audit reference only.

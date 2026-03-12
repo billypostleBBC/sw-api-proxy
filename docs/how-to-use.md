@@ -7,24 +7,27 @@ This guide covers two tasks:
 ## Focused runbooks
 
 Use these when you need a narrower operational guide:
-1. Repeatable template for onboarding any tool: `tool-onboarding-template.md`
-2. Alt-text Generator migration runbook: `alt-text-generator-onboarding.md`
-3. Key provisioning + rotation SOP: `proxy-key-provisioning.md`
+1. Generic onboarding runbook for any tool: `tool-onboarding.md`
+2. Key provisioning + rotation SOP: `proxy-key-provisioning.md`
 
 ## Prerequisites
 
 1. Proxy is running and reachable over HTTPS (required for session cookies).
 2. Your admin email is in `ADMIN_EMAIL_ALLOWLIST`.
-3. You have the shared `ADMIN_PASSWORD` value for this environment.
+3. You have the shared admin password for this environment.
 4. You know the proxy base URL.
+5. Production runtime may store `ADMIN_PASSWORD_HASH`, but operators still sign in with the plaintext shared password.
 
 ```bash
 export BASE_URL="https://proxy.example.com"
 export ADMIN_EMAIL="admin1@bbc.co.uk"
 export ADMIN_PASSWORD="<shared-admin-password>"
+export COOKIE_JAR="${TMPDIR:-/tmp}/proxy-api-admin.cookie"
 ```
 
 ## Fastest Manual Path: Browser Admin To Smoke Test
+
+Keep using this path while the admin UI is still being refined. It is the fastest operator flow for one-off setup, rotation, and smoke checks.
 
 1. Open `$BASE_URL/admin` in a browser.
 2. Sign in with your allowlisted admin email and shared password.
@@ -51,7 +54,7 @@ If you prefer CLI instead of the browser dashboard, use the API flow below.
 ## Step 1: Sign In As Admin (CLI)
 
 ```bash
-curl -i -c admin.cookies -X POST "$BASE_URL/admin/auth/login" \
+curl -i -c "$COOKIE_JAR" -X POST "$BASE_URL/admin/auth/login" \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}"
 ```
@@ -65,7 +68,7 @@ If you already have the project ID, skip to Step 3.
 Create a project:
 
 ```bash
-curl -s -b admin.cookies -X POST "$BASE_URL/admin/projects" \
+curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/projects" \
   -H "Content-Type: application/json" \
   -d '{
     "slug": "storyworks-prod",
@@ -82,7 +85,7 @@ Response includes project ID: `{"id":123}`
 If the project already exists, look it up via the admin API:
 
 ```bash
-curl -s -b admin.cookies "$BASE_URL/admin/projects?slug=storyworks-prod"
+curl -s -b "$COOKIE_JAR" "$BASE_URL/admin/projects?slug=storyworks-prod"
 ```
 
 ## Step 3: Add Or Rotate OpenAI API Key
@@ -91,7 +94,7 @@ curl -s -b admin.cookies "$BASE_URL/admin/projects?slug=storyworks-prod"
 export PROJECT_ID="123"
 export OPENAI_API_KEY="sk-..."
 
-curl -i -b admin.cookies -X POST "$BASE_URL/admin/projects/$PROJECT_ID/keys" \
+curl -i -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/projects/$PROJECT_ID/keys" \
   -H "Content-Type: application/json" \
   -d "{\"provider\":\"openai\",\"apiKey\":\"$OPENAI_API_KEY\"}"
 ```
@@ -109,7 +112,7 @@ Behavior in this codebase:
 1. Create tool:
 
 ```bash
-curl -s -b admin.cookies -X POST "$BASE_URL/admin/tools" \
+curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools" \
   -H "Content-Type: application/json" \
   -d '{
     "slug": "storyworks-ai-assistant",
@@ -125,7 +128,7 @@ Response: `{"id":456}`
 ```bash
 export TOOL_ID="456"
 
-curl -s -b admin.cookies -X POST "$BASE_URL/admin/tools/$TOOL_ID/tokens"
+curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools/$TOOL_ID/tokens"
 ```
 
 Response includes a long-lived token and expiry:
@@ -139,7 +142,7 @@ Store this token server-side only (for example in your tool's env vars).
 If the tool already exists, look it up via the admin API:
 
 ```bash
-curl -s -b admin.cookies "$BASE_URL/admin/tools?slug=storyworks-ai-assistant&projectId=$PROJECT_ID"
+curl -s -b "$COOKIE_JAR" "$BASE_URL/admin/tools?slug=storyworks-ai-assistant&projectId=$PROJECT_ID"
 ```
 
 ## Step 5: Point A Server Tool To The Proxy
@@ -160,7 +163,7 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   apiKey: process.env.PROXY_BEARER_TOKEN,
-  baseURL: `${process.env.BASE_URL}/proxy/v1`
+  baseURL: process.env.PROXY_BASE_URL
 });
 ```
 
@@ -213,7 +216,7 @@ Supported proxy endpoints in MVP:
 export OLD_TOOL_TOKEN="tt.<id>.<secret>"
 export TOKEN_ID="$(printf '%s' "$OLD_TOOL_TOKEN" | cut -d '.' -f2)"
 
-curl -i -b admin.cookies -X POST "$BASE_URL/admin/tools/$TOOL_ID/tokens/$TOKEN_ID/revoke"
+curl -i -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools/$TOOL_ID/tokens/$TOKEN_ID/revoke"
 ```
 
 ## Quick Failure Checklist

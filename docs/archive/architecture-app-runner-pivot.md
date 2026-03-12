@@ -1,4 +1,8 @@
-# Architecture Note: ECS to App Runner Pivot (MVP)
+# Archived Note: ECS to App Runner Pivot (MVP)
+
+This file is retained as migration history only.
+
+For the current deployment runbook, use `../../infra/README.md`.
 
 ## Why this pivot
 This service is an internal MVP proxy/relay. App Runner reduces operational overhead compared with ECS/ALB while preserving the existing Fastify application and security model.

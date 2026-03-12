@@ -1,4 +1,8 @@
-# Alt-text Generator Onboarding (Gemini -> Proxy-Backed OpenAI)
+# Archived Example: Alt-text Generator Onboarding (Gemini -> Proxy-Backed OpenAI)
+
+This file is retained as a historical example only.
+
+For the current generic onboarding path, use `../tool-onboarding.md`.
 
 This runbook onboards Alt-text Generator to SW API Proxy and defines migration constraints for a backend-relay architecture.
 

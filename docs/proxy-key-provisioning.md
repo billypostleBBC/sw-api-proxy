@@ -20,15 +20,16 @@ Set inputs:
 export BASE_URL="https://proxy.example.com"
 export ADMIN_EMAIL="admin@bbc.co.uk"
 export ADMIN_PASSWORD="<shared-admin-password>"
-export COOKIE_JAR="/tmp/proxy-api-admin.cookie"
+export COOKIE_JAR="${TMPDIR:-/tmp}/proxy-api-admin.cookie"
 
-export PROJECT_SLUG="alt-text-generator-prod"
-export PROJECT_NAME="Alt Text Generator"
+export PROJECT_SLUG="<tool-slug>-prod"
+export PROJECT_NAME="<Project Name>"
 export ENVIRONMENT="prod"
 export OWNER_EMAIL="owner@bbc.co.uk"
 export DAILY_TOKEN_CAP="2000000"
 export RPM_CAP="60"
-export TOOL_SLUG="alt-text-generator-relay"
+export TOOL_SLUG="<tool-slug>-relay"
+export OPENAI_API_KEY="sk-..."
 ```
 
 Step A: Admin auth
@@ -50,7 +51,8 @@ scripts/onboard-server-tool.sh \
   --daily-token-cap "$DAILY_TOKEN_CAP" \
   --rpm-cap "$RPM_CAP" \
   --tool-slug "$TOOL_SLUG" \
-  --tool-mode "server"
+  --tool-mode "server" \
+  --openai-api-key "$OPENAI_API_KEY"
 ```
 
 Step C: Smoke check
@@ -66,7 +68,7 @@ Use this if scripts cannot run in your environment.
 Sign in as admin and store cookie:
 
 ```bash
-curl -i -c admin.cookies -X POST "$BASE_URL/admin/auth/login" \
+curl -i -c "$COOKIE_JAR" -X POST "$BASE_URL/admin/auth/login" \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}"
 ```
@@ -74,16 +76,16 @@ curl -i -c admin.cookies -X POST "$BASE_URL/admin/auth/login" \
 Find project by slug (or create if not found):
 
 ```bash
-curl -s -b admin.cookies \
+curl -s -b "$COOKIE_JAR" \
   "$BASE_URL/admin/projects?slug=$PROJECT_SLUG"
 ```
 
 ```bash
-curl -s -b admin.cookies -X POST "$BASE_URL/admin/projects" \
+curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/projects" \
   -H "Content-Type: application/json" \
   -d '{
-    "slug":"alt-text-generator-prod",
-    "name":"Alt Text Generator",
+    "slug":"<tool-slug>-prod",
+    "name":"<Project Name>",
     "environment":"prod",
     "ownerEmail":"owner@bbc.co.uk",
     "dailyTokenCap":2000000,
@@ -97,7 +99,7 @@ Set or rotate active project OpenAI key:
 export PROJECT_ID="123"
 export OPENAI_API_KEY="sk-..."
 
-curl -i -b admin.cookies -X POST "$BASE_URL/admin/projects/$PROJECT_ID/keys" \
+curl -i -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/projects/$PROJECT_ID/keys" \
   -H "Content-Type: application/json" \
   -d "{\"provider\":\"openai\",\"apiKey\":\"$OPENAI_API_KEY\"}"
 ```
@@ -105,15 +107,15 @@ curl -i -b admin.cookies -X POST "$BASE_URL/admin/projects/$PROJECT_ID/keys" \
 Find tool by slug + project (or create if not found):
 
 ```bash
-curl -s -b admin.cookies \
-  "$BASE_URL/admin/tools?slug=alt-text-generator-relay&projectId=$PROJECT_ID"
+curl -s -b "$COOKIE_JAR" \
+  "$BASE_URL/admin/tools?slug=<tool-slug>-relay&projectId=$PROJECT_ID"
 ```
 
 ```bash
-curl -s -b admin.cookies -X POST "$BASE_URL/admin/tools" \
+curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools" \
   -H "Content-Type: application/json" \
   -d '{
-    "slug":"alt-text-generator-relay",
+    "slug":"<tool-slug>-relay",
     "projectId":123,
     "mode":"server"
   }'
@@ -124,7 +126,7 @@ Mint tool token:
 ```bash
 export TOOL_ID="456"
 
-curl -s -b admin.cookies -X POST "$BASE_URL/admin/tools/$TOOL_ID/tokens"
+curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools/$TOOL_ID/tokens"
 ```
 
 Smoke check:
@@ -142,23 +144,27 @@ curl -s -X POST "$BASE_URL/proxy/v1/responses" \
 ## 4) SSM storage pattern
 
 Recommended parameter names:
-1. `/alt-text-generator/prod/OPENAI_BASE_URL`
-2. `/alt-text-generator/prod/OPENAI_API_KEY`
+1. `/<app-name>/<env>/OPENAI_BASE_URL`
+2. `/<app-name>/<env>/OPENAI_API_KEY`
 
 Write parameters:
 
 ```bash
-aws ssm put-parameter \
-  --name "/alt-text-generator/prod/OPENAI_BASE_URL" \
-  --type "SecureString" \
-  --overwrite \
-  --value "https://proxy.example.com/proxy/v1"
+export APP_NAME="<app-name>"
+export PARAM_BASE="/$APP_NAME/$ENVIRONMENT"
+export TOOL_TOKEN="tt.<id>.<secret>"
 
 aws ssm put-parameter \
-  --name "/alt-text-generator/prod/OPENAI_API_KEY" \
+  --name "$PARAM_BASE/OPENAI_BASE_URL" \
   --type "SecureString" \
   --overwrite \
-  --value "tt.<id>.<secret>"
+  --value "$BASE_URL/proxy/v1"
+
+aws ssm put-parameter \
+  --name "$PARAM_BASE/OPENAI_API_KEY" \
+  --type "SecureString" \
+  --overwrite \
+  --value "$TOOL_TOKEN"
 ```
 
 ## 5) Rotation SOP
@@ -175,7 +181,7 @@ Revoke command:
 export OLD_TOOL_TOKEN="tt.<id>.<secret>"
 export TOKEN_ID="$(printf '%s' "$OLD_TOOL_TOKEN" | cut -d '.' -f2)"
 
-curl -i -b admin.cookies -X POST \
+curl -i -b "$COOKIE_JAR" -X POST \
   "$BASE_URL/admin/tools/$TOOL_ID/tokens/$TOKEN_ID/revoke"
 ```
 
