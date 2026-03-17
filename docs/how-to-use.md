@@ -151,7 +151,7 @@ export RELAY_PASSWORD="<shared-relay-password>"
 curl -s -X POST "$RELAY_BASE_URL/v1/auth/login" \
   -H "Content-Type: application/json" \
   -d '{
-    "email":"person@bbc.co.uk",
+    "email":"person@bbc.com",
     "password":"'"$RELAY_PASSWORD"'"
   }'
 ```

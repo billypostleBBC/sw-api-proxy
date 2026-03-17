@@ -9,7 +9,7 @@
         "StartCommand": "node dist/relay-app.js",
         "RuntimeEnvironmentVariables": {
           "AWS_REGION": "eu-west-2",
-          "RELAY_EMAIL_DOMAIN_ALLOWLIST": "bbc.co.uk",
+          "RELAY_EMAIL_DOMAIN_ALLOWLIST": "bbc.com",
           "RELAY_SESSION_TTL_HOURS": "24"
         },
         "RuntimeEnvironmentSecrets": {

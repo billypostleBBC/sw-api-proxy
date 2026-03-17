@@ -20,11 +20,13 @@ const createToolSchema = z.object({
     mode: z.enum(["server", "browser", "both"])
 });
 const projectsQuerySchema = z.object({
-    slug: z.string().min(1).optional()
+    slug: z.string().min(1).optional(),
+    includeInactive: z.enum(["true", "false"]).optional().transform((value) => value === "true")
 });
 const toolsQuerySchema = z.object({
     slug: z.string().min(1).optional(),
-    projectId: z.coerce.number().int().positive().optional()
+    projectId: z.coerce.number().int().positive().optional(),
+    includeInactive: z.enum(["true", "false"]).optional().transform((value) => value === "true")
 });
 function relayResponseForTool(baseUrl, tool) {
     return {
@@ -186,15 +188,46 @@ export function registerAdminRoutes(app, deps) {
         if (!actorEmail) {
             return sendError(reply, 401, "unauthorized", "Admin session required");
         }
-        const { tokenId } = request.params;
-        await deps.repo.revokeToolToken(tokenId);
+        const { toolId: toolIdRaw, tokenId } = request.params;
+        const toolId = Number(toolIdRaw);
+        if (!Number.isFinite(toolId) || toolId < 1) {
+            return sendError(reply, 400, "bad_request", "Invalid tool id");
+        }
+        const revoked = await deps.repo.revokeToolToken(toolId, tokenId);
+        if (!revoked) {
+            return sendError(reply, 404, "not_found", "Tool token not found");
+        }
         await deps.usageService.audit({
             actorEmail,
             actorScope: "admin",
             action: "tool.token.revoked",
             targetType: "tool_token",
             targetId: tokenId,
-            metadata: {}
+            metadata: { toolId }
+        });
+        return reply.send({ ok: true });
+    });
+    app.delete("/admin/tools/:toolId/tokens/:tokenId", async (request, reply) => {
+        const actorEmail = await requireAdmin(app, request, deps.authService);
+        if (!actorEmail) {
+            return sendError(reply, 401, "unauthorized", "Admin session required");
+        }
+        const { toolId: toolIdRaw, tokenId } = request.params;
+        const toolId = Number(toolIdRaw);
+        if (!Number.isFinite(toolId) || toolId < 1) {
+            return sendError(reply, 400, "bad_request", "Invalid tool id");
+        }
+        const revoked = await deps.repo.revokeToolToken(toolId, tokenId);
+        if (!revoked) {
+            return sendError(reply, 404, "not_found", "Tool token not found");
+        }
+        await deps.usageService.audit({
+            actorEmail,
+            actorScope: "admin",
+            action: "tool.token.revoked",
+            targetType: "tool_token",
+            targetId: tokenId,
+            metadata: { toolId }
         });
         return reply.send({ ok: true });
     });
@@ -208,7 +241,8 @@ export function registerAdminRoutes(app, deps) {
             return sendError(reply, 400, "bad_request", "Invalid query", { issues: parsed.error.issues });
         }
         const projects = await deps.repo.listProjects({
-            slug: parsed.data.slug
+            slug: parsed.data.slug,
+            includeInactive: parsed.data.includeInactive
         });
         return reply.send({ projects });
     });
@@ -223,13 +257,80 @@ export function registerAdminRoutes(app, deps) {
         }
         const tools = await deps.repo.listTools({
             slug: parsed.data.slug,
-            projectId: parsed.data.projectId
+            projectId: parsed.data.projectId,
+            includeInactive: parsed.data.includeInactive
         });
         return reply.send({
             tools: tools.map((tool) => ({
                 ...tool,
                 ...relayResponseForTool(app.env.relayPublicBaseUrl, tool)
             }))
+        });
+    });
+    app.get("/admin/tools/:toolId/tokens", async (request, reply) => {
+        const actorEmail = await requireAdmin(app, request, deps.authService);
+        if (!actorEmail) {
+            return sendError(reply, 401, "unauthorized", "Admin session required");
+        }
+        const toolId = Number(request.params.toolId);
+        if (!Number.isFinite(toolId) || toolId < 1) {
+            return sendError(reply, 400, "bad_request", "Invalid tool id");
+        }
+        const tool = await deps.repo.getToolById(toolId);
+        if (!tool) {
+            return sendError(reply, 404, "not_found", "Tool not found");
+        }
+        const tokens = await deps.repo.listToolTokens(toolId);
+        return reply.send({ tokens });
+    });
+    app.delete("/admin/tools/:toolId", async (request, reply) => {
+        const actorEmail = await requireAdmin(app, request, deps.authService);
+        if (!actorEmail) {
+            return sendError(reply, 401, "unauthorized", "Admin session required");
+        }
+        const toolId = Number(request.params.toolId);
+        if (!Number.isFinite(toolId) || toolId < 1) {
+            return sendError(reply, 400, "bad_request", "Invalid tool id");
+        }
+        const result = await deps.repo.deactivateTool(toolId);
+        if (!result) {
+            return sendError(reply, 404, "not_found", "Tool not found");
+        }
+        await deps.usageService.audit({
+            actorEmail,
+            actorScope: "admin",
+            action: "tool.deleted",
+            targetType: "tool",
+            targetId: String(toolId),
+            metadata: result
+        });
+        return reply.send({ ok: true, tokensRevoked: result.tokensRevoked });
+    });
+    app.delete("/admin/projects/:projectId", async (request, reply) => {
+        const actorEmail = await requireAdmin(app, request, deps.authService);
+        if (!actorEmail) {
+            return sendError(reply, 401, "unauthorized", "Admin session required");
+        }
+        const projectId = Number(request.params.projectId);
+        if (!Number.isFinite(projectId) || projectId < 1) {
+            return sendError(reply, 400, "bad_request", "Invalid project id");
+        }
+        const result = await deps.repo.deactivateProject(projectId);
+        if (!result) {
+            return sendError(reply, 404, "not_found", "Project not found");
+        }
+        await deps.usageService.audit({
+            actorEmail,
+            actorScope: "admin",
+            action: "project.deleted",
+            targetType: "project",
+            targetId: String(projectId),
+            metadata: result
+        });
+        return reply.send({
+            ok: true,
+            toolsDeactivated: result.toolsDeactivated,
+            tokensRevoked: result.tokensRevoked
         });
     });
     app.get("/admin/usage", async (request, reply) => {

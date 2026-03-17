@@ -35,7 +35,7 @@ const RelayEnvSchema = BaseEnvSchema.extend({
         .string()
         .regex(/^[a-fA-F0-9]{64}$/, "RELAY_PASSWORD_HASH must be a 64-char SHA-256 hex string")
         .optional(),
-    RELAY_EMAIL_DOMAIN_ALLOWLIST: z.string().default("bbc.co.uk"),
+    RELAY_EMAIL_DOMAIN_ALLOWLIST: z.string().default("bbc.com"),
     RELAY_SESSION_TTL_HOURS: z.coerce.number().int().positive().default(24)
 }).superRefine((env, ctx) => {
     if (!env.RELAY_PASSWORD && !env.RELAY_PASSWORD_HASH) {

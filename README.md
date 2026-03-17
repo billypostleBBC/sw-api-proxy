@@ -5,7 +5,7 @@ MVP TypeScript services for securely routing OpenAI requests to internal tools a
 ## Features
 - KMS-encrypted OpenAI key storage per project.
 - Admin auth via allowlisted email + shared password.
-- Shared relay auth via BBC email + shared password with daily bearer sessions.
+- Shared relay auth via BBC Studios (`@bbc.com`) email + shared password with daily bearer sessions.
 - Tool auth via long-lived hashed tokens.
 - Proxy endpoints:
   - `POST /proxy/v1/responses`
@@ -27,6 +27,22 @@ MVP TypeScript services for securely routing OpenAI requests to internal tools a
    - `npm run dev:relay`
 
 On startup, DB migrations run automatically.
+
+## Local preview database
+Use this when you want a disposable local Postgres for dashboard/UI preview without touching AWS:
+1. Start the container:
+   - `./scripts/dev-postgres.sh start`
+2. Copy the preview env if you want to customize it:
+   - `cp .env.preview.example .env.preview.local`
+3. Launch the admin preview app:
+   - `./scripts/run-preview-admin.sh`
+
+Defaults:
+1. Local Postgres runs in Docker on `localhost:54329`.
+2. Preview admin login uses:
+   - email: `admin@bbc.co.uk`
+   - password: `preview-admin-password`
+3. Rotate-key and real proxy calls still require valid AWS/OpenAI credentials; the dashboard shell, project/tool CRUD, token mint/revoke, usage views, and delete flows work against the local preview DB.
 
 ## Build and test
 - Build: `npm run build`

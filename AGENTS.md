@@ -6,16 +6,17 @@ This document defines the operating scope and engineering rules for this reposit
 Treat this file as project law.
 If a request conflicts with this file, update this file first or do not implement the request.
 
-## Repository Snapshot (as of 2026-03-12)
+## Repository Snapshot (as of 2026-03-17)
 TypeScript Fastify services for internal AI tooling with:
 1. Admin email/password auth with allowlist-gated session cookies.
 2. Client-facing relay auth with BBC email + shared password and short-lived bearer sessions.
 3. Slug-routed relay responses endpoint for distributed tools.
-2. Project/tool management with per-project limits.
-4. Server-side encrypted OpenAI key storage (AWS KMS).
-5. Usage + audit persistence in Postgres.
-6. Primary AWS App Runner deployment artifacts under `infra/`.
-7. Legacy ECS deployment artifacts parked under `infra/legacy/ecs/`.
+4. Project/tool management with per-project limits and admin soft-delete controls.
+5. Admin dashboard management for projects, tools, tool tokens, usage, and in-app help content.
+6. Server-side encrypted OpenAI key storage (AWS KMS).
+7. Usage + audit persistence in Postgres.
+8. Primary AWS App Runner deployment artifacts under `infra/`.
+9. Legacy ECS deployment artifacts parked under `infra/legacy/ecs/`.
 
 ## In-Scope (Current MVP)
 1. Maintain and extend the existing Fastify API in `src/`.
@@ -26,14 +27,20 @@ TypeScript Fastify services for internal AI tooling with:
    - `GET /proxy/v1/models`
    - `POST /v1/auth/login`
    - `POST /v1/tools/:toolSlug/responses`
-4. Support current auth flows:
+4. Support admin dashboard lifecycle controls for existing entities:
+   - soft-delete projects,
+   - soft-delete tools,
+   - revoke tool tokens,
+   - list inactive projects/tools on demand,
+   - keep usage history visible after soft delete.
+5. Support current auth flows:
    - Admin login: email + shared password.
    - Admin session cookie enforcement for admin routes.
    - Tool bearer tokens.
    - Relay login: BBC email + shared password.
    - Relay bearer session enforcement for client-facing relay routes.
-5. Enforce per-project RPM and daily token caps.
-6. Persist operational data in existing tables (`projects`, `tools`, `tool_tokens`, `usage_events`, `audit_logs`, `sessions`, etc.).
+6. Enforce per-project RPM and daily token caps.
+7. Persist operational data in existing tables (`projects`, `tools`, `tool_tokens`, `usage_events`, `audit_logs`, `sessions`, etc.).
 
 ## Out of Scope (Do Not Add Without Explicit Approval)
 1. Queues, background workers, retry frameworks, caching layers.
@@ -100,3 +107,4 @@ Any meaningful requirement change must update this file in the same change set, 
 - 2026-03-12: Standardized production admin auth secret on `ADMIN_PASSWORD_HASH` (with local `ADMIN_PASSWORD` fallback) and completed image-based App Runner deployment path for `proxy-api`.
 - 2026-03-12: Expanded MVP scope to include a separate shared relay service with BBC email + shared password login, bearer relay sessions, and slug-routed `responses` access for distributed tools.
 - 2026-03-17: Cost-optimized production runtime by decommissioning active legacy ECS/ALB/EC2 resources, right-sizing App Runner services to `256/512`, and removing the dedicated KMS VPC endpoint; deployment docs now treat this as the default low-cost baseline.
+- 2026-03-17: Added admin dashboard soft-delete flows for projects/tools, visible tool-token management, inactive-record filters, and dark-mode/help UX while preserving usage history.

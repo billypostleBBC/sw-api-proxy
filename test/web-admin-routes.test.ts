@@ -36,6 +36,7 @@ describe("web admin routes", () => {
     expect(response.body).toContain("Proxy Admin Login");
     expect(response.body).toContain("adminLoginForm");
     expect(response.body).toContain("adminPassword");
+    expect(response.body).toContain('data-bs-theme="dark"');
     await app.close();
   });
 
@@ -56,6 +57,12 @@ describe("web admin routes", () => {
     expect(response.body).toContain("Proxy Admin Dashboard");
     expect(response.body).toContain("Signed in as admin@bbc.com");
     expect(response.body).toContain("createProjectForm");
+    expect(response.body).toContain("helpBtn");
+    expect(response.body).toContain("projectsIncludeInactive");
+    expect(response.body).toContain("toolsIncludeInactive");
+    expect(response.body).toContain("tokenRows");
+    expect(response.body).toContain("Admin Dashboard Help");
+    expect(response.body).toContain("<th>#</th>");
     await app.close();
   });
 

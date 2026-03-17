@@ -22,7 +22,7 @@ async function buildRelayTestApp() {
       expiresAt: new Date("2026-03-13T12:00:00.000Z")
     }),
     getSessionEmail: vi.fn().mockImplementation(async (_scope: string, token: string) => {
-      return token === "st.valid.secret" ? "person@bbc.co.uk" : null;
+      return token === "st.valid.secret" ? "person@bbc.com" : null;
     })
   };
   const limitService = {
@@ -37,7 +37,7 @@ async function buildRelayTestApp() {
     "env",
     {
       relayPasswordHash: sha256("shared-relay-password"),
-      relayEmailDomainAllowlist: new Set(["bbc.co.uk"])
+      relayEmailDomainAllowlist: new Set(["bbc.com"])
     } as any
   );
   app.decorate("repo", repo as any);
@@ -55,23 +55,23 @@ async function buildRelayTestApp() {
 }
 
 describe("relay login route", () => {
-  it("creates a daily relay session for BBC email and shared password", async () => {
+  it("creates a daily relay session for BBC Studios email and shared password", async () => {
     const { app, authService, usageService } = await buildRelayTestApp();
 
     const response = await app.inject({
       method: "POST",
       url: "/v1/auth/login",
       payload: {
-        email: "person@bbc.co.uk",
+        email: "person@bbc.com",
         password: "shared-relay-password"
       },
       remoteAddress: "10.0.0.1"
     });
 
     expect(response.statusCode).toBe(200);
-    expect(authService.createSessionWithExpiry).toHaveBeenCalledWith("user", "person@bbc.co.uk");
+    expect(authService.createSessionWithExpiry).toHaveBeenCalledWith("user", "person@bbc.com");
     expect(usageService.audit).toHaveBeenCalledWith({
-      actorEmail: "person@bbc.co.uk",
+      actorEmail: "person@bbc.com",
       actorScope: "user",
       action: "relay.session.created",
       targetType: "session",
@@ -106,6 +106,27 @@ describe("relay login route", () => {
     await app.close();
   });
 
+  it("rejects bbc.co.uk email when relay allowlist is bbc.com", async () => {
+    const { app } = await buildRelayTestApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: {
+        email: "person@bbc.co.uk",
+        password: "shared-relay-password"
+      },
+      remoteAddress: "10.0.0.20"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: "unauthorized",
+      message: "Invalid relay credentials"
+    });
+    await app.close();
+  });
+
   it("rate limits repeated failed login attempts from the same ip", async () => {
     const { app } = await buildRelayTestApp();
 
@@ -114,7 +135,7 @@ describe("relay login route", () => {
         method: "POST",
         url: "/v1/auth/login",
         payload: {
-          email: "person@bbc.co.uk",
+          email: "person@bbc.com",
           password: "wrong-password"
         },
         remoteAddress: "10.0.0.3"
@@ -126,7 +147,7 @@ describe("relay login route", () => {
       method: "POST",
       url: "/v1/auth/login",
       payload: {
-        email: "person@bbc.co.uk",
+        email: "person@bbc.com",
         password: "wrong-password"
       },
       remoteAddress: "10.0.0.3"

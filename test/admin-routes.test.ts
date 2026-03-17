@@ -26,6 +26,9 @@ async function buildAdminTestApp(options?: { relayPublicBaseUrl?: string }) {
   const repo = {
     listProjects: vi.fn().mockResolvedValue([]),
     listTools: vi.fn().mockResolvedValue([]),
+    listToolTokens: vi.fn().mockResolvedValue([]),
+    createProject: vi.fn().mockResolvedValue({ id: 10 }),
+    setActiveProjectKey: vi.fn().mockResolvedValue(undefined),
     createTool: vi.fn().mockResolvedValue({ id: 11 }),
     getToolById: vi.fn().mockResolvedValue({
       id: 8,
@@ -34,7 +37,11 @@ async function buildAdminTestApp(options?: { relayPublicBaseUrl?: string }) {
       mode: "server",
       status: "active"
     }),
-    createToolToken: vi.fn().mockResolvedValue(undefined)
+    createToolToken: vi.fn().mockResolvedValue(undefined),
+    revokeToolToken: vi.fn().mockResolvedValue(true),
+    getUsage: vi.fn().mockResolvedValue([]),
+    deactivateTool: vi.fn().mockResolvedValue({ tokensRevoked: 2 }),
+    deactivateProject: vi.fn().mockResolvedValue({ toolsDeactivated: 3, tokensRevoked: 4 })
   };
   const usageService = { audit: vi.fn() };
 
@@ -45,7 +52,7 @@ async function buildAdminTestApp(options?: { relayPublicBaseUrl?: string }) {
   });
 
   await app.ready();
-  return { app, repo, authService };
+  return { app, repo, authService, usageService };
 }
 
 describe("admin login route", () => {
@@ -216,7 +223,10 @@ describe("admin discovery routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(repo.listProjects).toHaveBeenCalledWith({ slug: "story-assistant-prod" });
+    expect(repo.listProjects).toHaveBeenCalledWith({
+      slug: "story-assistant-prod",
+      includeInactive: false
+    });
     expect(response.json()).toEqual({
       projects: [
         {
@@ -257,7 +267,8 @@ describe("admin discovery routes", () => {
     expect(response.statusCode).toBe(200);
     expect(repo.listTools).toHaveBeenCalledWith({
       slug: "story-assistant-server",
-      projectId: 10
+      projectId: 10,
+      includeInactive: false
     });
     expect(response.json()).toEqual({
       tools: [
@@ -269,6 +280,35 @@ describe("admin discovery routes", () => {
           status: "active"
         }
       ]
+    });
+    await app.close();
+  });
+
+  it("passes includeInactive when requested", async () => {
+    const { app, repo } = await buildAdminTestApp();
+
+    const projectsResponse = await app.inject({
+      method: "GET",
+      url: "/admin/projects?includeInactive=true",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      }
+    });
+    const toolsResponse = await app.inject({
+      method: "GET",
+      url: "/admin/tools?includeInactive=true",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      }
+    });
+
+    expect(projectsResponse.statusCode).toBe(200);
+    expect(toolsResponse.statusCode).toBe(200);
+    expect(repo.listProjects).toHaveBeenCalledWith({ slug: undefined, includeInactive: true });
+    expect(repo.listTools).toHaveBeenCalledWith({
+      slug: undefined,
+      projectId: undefined,
+      includeInactive: true
     });
     await app.close();
   });
@@ -361,6 +401,117 @@ describe("admin discovery routes", () => {
     expect(response.json().relayResponsesUrl).toBe("https://relay.example.com/v1/tools/story-assistant-server/responses");
     expect(response.json().expiresAt).toMatch(/^20\d\d-/);
     expect(response.json().token).toMatch(/^tt\./);
+    await app.close();
+  });
+
+  it("lists tool token summaries", async () => {
+    const { app, repo } = await buildAdminTestApp();
+    repo.listToolTokens.mockResolvedValue([
+      {
+        id: "tok_123",
+        status: "active",
+        expiresAt: new Date("2026-04-01T12:00:00.000Z"),
+        lastUsedAt: null,
+        createdAt: new Date("2026-03-17T12:00:00.000Z")
+      }
+    ]);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/tools/8/tokens",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(repo.listToolTokens).toHaveBeenCalledWith(8);
+    expect(response.json()).toEqual({
+      tokens: [
+        {
+          id: "tok_123",
+          status: "active",
+          expiresAt: "2026-04-01T12:00:00.000Z",
+          lastUsedAt: null,
+          createdAt: "2026-03-17T12:00:00.000Z"
+        }
+      ]
+    });
+    await app.close();
+  });
+
+  it("returns 404 when deleting a tool token that does not belong to the tool", async () => {
+    const { app, repo } = await buildAdminTestApp();
+    repo.revokeToolToken.mockResolvedValue(false);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/admin/tools/8/tokens/not-owned",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      }
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: "not_found",
+      message: "Tool token not found"
+    });
+    expect(repo.revokeToolToken).toHaveBeenCalledWith(8, "not-owned");
+    await app.close();
+  });
+
+  it("soft-deletes a tool and revokes its tokens", async () => {
+    const { app, repo, usageService } = await buildAdminTestApp();
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/admin/tools/8",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(repo.deactivateTool).toHaveBeenCalledWith(8);
+    expect(response.json()).toEqual({ ok: true, tokensRevoked: 2 });
+    expect(usageService.audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "tool.deleted",
+        targetType: "tool",
+        targetId: "8",
+        metadata: { tokensRevoked: 2 }
+      })
+    );
+    await app.close();
+  });
+
+  it("soft-deletes a project and deactivates child tools", async () => {
+    const { app, repo, usageService } = await buildAdminTestApp();
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/admin/projects/10",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(repo.deactivateProject).toHaveBeenCalledWith(10);
+    expect(response.json()).toEqual({
+      ok: true,
+      toolsDeactivated: 3,
+      tokensRevoked: 4
+    });
+    expect(usageService.audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "project.deleted",
+        targetType: "project",
+        targetId: "10",
+        metadata: { toolsDeactivated: 3, tokensRevoked: 4 }
+      })
+    );
     await app.close();
   });
 });

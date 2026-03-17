@@ -7,6 +7,7 @@ function makeAuthContext() {
     mode: "tool",
     toolId: 1,
     toolSlug: "demo-tool",
+    toolStatus: "active",
     projectId: 10,
     projectSlug: "demo-project",
     projectStatus: "inactive",
@@ -40,6 +41,32 @@ async function buildProxyTestApp() {
 }
 
 describe("proxy route project status guard", () => {
+  it("returns 403 for responses when tool is inactive", async () => {
+    const { app, repo, kmsService, limitService } = await buildProxyTestApp();
+    repo.findAuthByToolToken.mockResolvedValue({
+      ...makeAuthContext(),
+      toolStatus: "inactive",
+      projectStatus: "active"
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/proxy/v1/responses",
+      headers: { authorization: "Bearer tt.fake.fake" },
+      payload: { model: "gpt-4.1-mini" }
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({
+      error: "forbidden",
+      message: "Tool is inactive"
+    });
+    expect(limitService.enforce).not.toHaveBeenCalled();
+    expect(repo.getActiveProjectKey).not.toHaveBeenCalled();
+    expect(kmsService.decrypt).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("returns 403 for embeddings when project is inactive", async () => {
     const { app, repo, kmsService, limitService } = await buildProxyTestApp();
     const response = await app.inject({

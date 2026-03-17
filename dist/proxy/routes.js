@@ -13,6 +13,9 @@ export function registerProxyRoutes(app, deps) {
         if (!auth) {
             return sendError(reply, 401, "unauthorized", "Missing or invalid bearer token");
         }
+        if (auth.toolStatus !== "active") {
+            return sendError(reply, 403, "forbidden", "Tool is inactive");
+        }
         return sendResponsesRequest(app, reply, deps, auth, parsedBody.data);
     });
     app.post("/proxy/v1/embeddings", async (request, reply) => {
@@ -23,6 +26,9 @@ export function registerProxyRoutes(app, deps) {
         const auth = await resolveProxyAuth(request, app.repo);
         if (!auth) {
             return sendError(reply, 401, "unauthorized", "Missing or invalid bearer token");
+        }
+        if (auth.toolStatus !== "active") {
+            return sendError(reply, 403, "forbidden", "Tool is inactive");
         }
         if (auth.projectStatus !== "active") {
             return sendError(reply, 403, "forbidden", "Project is inactive");
@@ -71,6 +77,9 @@ export function registerProxyRoutes(app, deps) {
         const auth = await resolveProxyAuth(request, app.repo);
         if (!auth) {
             return sendError(reply, 401, "unauthorized", "Missing or invalid bearer token");
+        }
+        if (auth.toolStatus !== "active") {
+            return sendError(reply, 403, "forbidden", "Tool is inactive");
         }
         if (auth.projectStatus !== "active") {
             return sendError(reply, 403, "forbidden", "Project is inactive");

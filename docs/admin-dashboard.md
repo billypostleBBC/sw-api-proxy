@@ -13,7 +13,8 @@ Use this when you want to manage projects, OpenAI keys, tools, tool tokens, and 
 3. Rotate active OpenAI key for a project.
 4. Create tools.
 5. Mint and revoke tool tokens.
-6. View recent usage events with filters.
+6. Soft-delete projects and tools (deactivate).
+7. View recent usage events with filters.
 
 ## Prerequisites
 
@@ -46,8 +47,9 @@ The page has 3 sections:
 3. `Usage`
 
 Top-right actions:
-1. `Refresh all` reloads projects/tools/usage tables.
-2. `Sign out` clears `admin_session` cookie.
+1. `Help` opens the in-page admin guide.
+2. `Refresh all` reloads projects/tools/usage tables.
+3. `Sign out` clears `admin_session` cookie.
 
 ## Projects section
 
@@ -66,6 +68,7 @@ Click `Create project`.
 Notes:
 1. Duplicate `slug` fails due DB uniqueness.
 2. Caps are enforced by proxy on requests to `/proxy/v1/*`.
+3. The projects table hides inactive projects by default. Use `Show inactive` to include them.
 
 ### Rotate project API key
 
@@ -79,6 +82,16 @@ Behavior:
 1. New key becomes active immediately.
 2. Previous key for that project is set inactive.
 3. Raw key is never returned by API.
+
+### Delete project (soft)
+
+Use the `Delete` action in the Projects table.
+
+Behavior:
+1. Project status becomes `inactive`.
+2. All tools under the project become `inactive`.
+3. All tokens for those tools are revoked.
+4. Usage history remains visible in the Usage table.
 
 ## Tools & Tokens section
 
@@ -94,6 +107,9 @@ Use `Create tool` with:
 
 Click `Create tool`.
 
+Notes:
+1. The tools table hides inactive tools by default. Use `Show inactive` to include them.
+
 ### Mint tool token
 
 Use `Mint tool token` with:
@@ -107,17 +123,26 @@ Important:
 3. Token format is `tt.<id>.<secret>`.
 4. Expiry is shown in the panel (`TOOL_TOKEN_TTL_DAYS`, default 90 days).
 
-### Revoke tool token
+### Token list & revoke
 
-Use `Revoke tool token` with:
-1. `tool id`
-2. `token id or full token`
+Use the token list panel to revoke tokens without pasting secrets.
 
-You can paste either:
-1. Full token (`tt.<id>.<secret>`)
-2. Token ID only (`<id>`)
+Flow:
+1. Select `Tokens` from the tool row you want to inspect.
+2. The panel shows token IDs and status (active/revoked).
+3. Click `Revoke` to deactivate a token.
 
-Click `Revoke token`.
+Notes:
+1. Raw token material is never shown after minting.
+
+### Delete tool (soft)
+
+Use the `Delete` action in the Tools table.
+
+Behavior:
+1. Tool status becomes `inactive`.
+2. All tokens for that tool are revoked.
+3. Usage history remains visible in the Usage table.
 
 ## Usage section
 
@@ -138,6 +163,7 @@ Usage table shows:
 Notes:
 1. The admin usage endpoint returns up to 1000 rows per request.
 2. Datetimes are entered in local browser time, then sent as ISO timestamps.
+3. The first column `#` is the usage event number (not project/tool ID).
 
 ## Recommended first-time flow
 
@@ -164,6 +190,6 @@ For a new tool, do this in order:
 ## What this dashboard does not do (MVP)
 
 1. Edit existing project caps/name/owner.
-2. Delete projects or tools.
+2. Hard-delete projects or tools (deletes are soft only).
 3. Show raw OpenAI keys.
 4. Manage non-OpenAI providers.

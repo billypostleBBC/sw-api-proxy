@@ -24,6 +24,9 @@ export class Repo {
     async listProjects(filter) {
         const where = [];
         const args = [];
+        if (!filter.includeInactive) {
+            where.push(`status = 'active'`);
+        }
         if (filter.slug) {
             args.push(filter.slug);
             where.push(`slug = $${args.length}`);
@@ -66,6 +69,9 @@ export class Repo {
     async listTools(filter) {
         const where = [];
         const args = [];
+        if (!filter.includeInactive) {
+            where.push(`status = 'active'`);
+        }
         if (filter.slug) {
             args.push(filter.slug);
             where.push(`slug = $${args.length}`);
@@ -107,8 +113,84 @@ export class Repo {
         await this.pool.query(`INSERT INTO tool_tokens (id, tool_id, token_hash, expires_at, status)
        VALUES ($1, $2, $3, $4, 'active')`, [input.tokenId, input.toolId, input.tokenHash, input.expiresAt]);
     }
-    async revokeToolToken(tokenId) {
-        await this.pool.query(`UPDATE tool_tokens SET status = 'revoked', updated_at = now() WHERE id = $1`, [tokenId]);
+    async listToolTokens(toolId) {
+        const result = await this.pool.query(`SELECT id, status, expires_at, last_used_at, created_at
+       FROM tool_tokens
+       WHERE tool_id = $1
+       ORDER BY created_at DESC`, [toolId]);
+        return result.rows.map((row) => ({
+            id: row.id,
+            status: row.status,
+            expiresAt: row.expires_at,
+            lastUsedAt: row.last_used_at,
+            createdAt: row.created_at
+        }));
+    }
+    async revokeToolToken(toolId, tokenId) {
+        const result = await this.pool.query(`UPDATE tool_tokens
+       SET status = 'revoked', updated_at = now()
+       WHERE id = $1 AND tool_id = $2`, [tokenId, toolId]);
+        return (result.rowCount ?? 0) > 0;
+    }
+    async deactivateTool(toolId) {
+        const client = await this.pool.connect();
+        try {
+            await client.query("BEGIN");
+            const tool = await client.query(`SELECT id FROM tools WHERE id = $1`, [toolId]);
+            if (!tool.rows[0]) {
+                await client.query("ROLLBACK");
+                return null;
+            }
+            await client.query(`UPDATE tools SET status = 'inactive', updated_at = now() WHERE id = $1`, [toolId]);
+            const revokedTokens = await client.query(`UPDATE tool_tokens
+         SET status = 'revoked', updated_at = now()
+         WHERE tool_id = $1 AND status <> 'revoked'`, [toolId]);
+            await client.query("COMMIT");
+            return { tokensRevoked: revokedTokens.rowCount ?? 0 };
+        }
+        catch (error) {
+            await client.query("ROLLBACK");
+            throw error;
+        }
+        finally {
+            client.release();
+        }
+    }
+    async deactivateProject(projectId) {
+        const client = await this.pool.connect();
+        try {
+            await client.query("BEGIN");
+            const project = await client.query(`SELECT id FROM projects WHERE id = $1`, [projectId]);
+            if (!project.rows[0]) {
+                await client.query("ROLLBACK");
+                return null;
+            }
+            await client.query(`UPDATE projects SET status = 'inactive', updated_at = now() WHERE id = $1`, [projectId]);
+            await client.query(`UPDATE project_keys
+         SET status = 'inactive', updated_at = now()
+         WHERE project_id = $1 AND status <> 'inactive'`, [projectId]);
+            const deactivatedTools = await client.query(`UPDATE tools
+         SET status = 'inactive', updated_at = now()
+         WHERE project_id = $1 AND status <> 'inactive'`, [projectId]);
+            const revokedTokens = await client.query(`UPDATE tool_tokens tt
+         SET status = 'revoked', updated_at = now()
+         FROM tools t
+         WHERE tt.tool_id = t.id
+           AND t.project_id = $1
+           AND tt.status <> 'revoked'`, [projectId]);
+            await client.query("COMMIT");
+            return {
+                toolsDeactivated: deactivatedTools.rowCount ?? 0,
+                tokensRevoked: revokedTokens.rowCount ?? 0
+            };
+        }
+        catch (error) {
+            await client.query("ROLLBACK");
+            throw error;
+        }
+        finally {
+            client.release();
+        }
     }
     async findAuthByToolToken(rawToken) {
         const parsed = parseOpaqueToken(rawToken, "tt");
@@ -122,6 +204,7 @@ export class Repo {
          tt.status,
          t.id as tool_id,
          t.slug as tool_slug,
+         t.status as tool_status,
          p.id as project_id,
          p.slug as project_slug,
          p.status as project_status,
@@ -146,6 +229,7 @@ export class Repo {
             mode: "tool",
             toolId: token.tool_id,
             toolSlug: token.tool_slug,
+            toolStatus: token.tool_status,
             projectId: token.project_id,
             projectSlug: token.project_slug,
             projectStatus: token.project_status,
