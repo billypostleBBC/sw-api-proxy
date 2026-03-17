@@ -99,3 +99,4 @@ Any meaningful requirement change must update this file in the same change set, 
 - 2026-03-10: Removed SES and magic-link auth/runtime dependencies; switched MVP auth to allowlisted admin email + shared password with session cookies and tool-token proxy access.
 - 2026-03-12: Standardized production admin auth secret on `ADMIN_PASSWORD_HASH` (with local `ADMIN_PASSWORD` fallback) and completed image-based App Runner deployment path for `proxy-api`.
 - 2026-03-12: Expanded MVP scope to include a separate shared relay service with BBC email + shared password login, bearer relay sessions, and slug-routed `responses` access for distributed tools.
+- 2026-03-17: Cost-optimized production runtime by decommissioning active legacy ECS/ALB/EC2 resources, right-sizing App Runner services to `256/512`, and removing the dedicated KMS VPC endpoint; deployment docs now treat this as the default low-cost baseline.

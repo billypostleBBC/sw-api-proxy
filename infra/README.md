@@ -14,6 +14,12 @@ Defaults for this MVP:
 2. `AutoDeploymentsEnabled=false`.
 3. No implicit deploy-on-commit behavior.
 
+Cost-optimized production baseline (as of 2026-03-17):
+1. `proxy-api` App Runner instance size: `Cpu=256`, `Memory=512`.
+2. `relay-api` App Runner instance size: `Cpu=256`, `Memory=512`.
+3. Legacy ECS/ALB/EC2 runtime path is decommissioned.
+4. No KMS interface VPC endpoint in the app VPC by default.
+
 ## Production config and secrets (locked)
 
 Production source of truth:
@@ -74,11 +80,12 @@ App Runner runtime should:
 1. Use VPC egress through the configured App Runner connector.
 2. Reach OpenAI over outbound internet egress.
 3. Reach RDS over the approved DB security group and port.
-4. Reach KMS through AWS-managed networking or a VPC endpoint, depending on your environment design.
+4. Reach KMS through AWS-managed networking over existing egress (no dedicated KMS interface endpoint by default).
 5. Keep image pulls and runtime secret retrieval on the App Runner-managed path, not through the VPC connector.
 
-MVP trade-off:
-1. A single NAT keeps cost and setup low, but it is a single-AZ failure domain for outbound internet egress.
+MVP trade-offs:
+1. A single NAT keeps setup simple, but still carries fixed monthly cost and is a single-AZ failure domain.
+2. No KMS VPC endpoint reduces fixed monthly cost, but keeps KMS traffic on the standard egress path.
 
 ## Build and deploy flow
 
@@ -86,6 +93,10 @@ MVP trade-off:
 ```bash
 ./infra/scripts/ensure-apprunner-vpc-egress.sh
 ```
+
+Cost note:
+1. The helper script may provision resources that increase fixed monthly cost (for example, NAT and KMS endpoint infra).
+2. Do not run it in production unless you actually need to recreate missing network resources.
 
 ### 1) Build and push immutable image
 ```bash

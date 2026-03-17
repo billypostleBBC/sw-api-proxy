@@ -50,6 +50,7 @@ Use this checklist for both `proxy-api` and `relay-api`.
 For both:
 1. Fill placeholders only.
 2. Confirm `AutoDeploymentsEnabled=false`.
+3. Confirm `InstanceConfiguration` stays at `Cpu=256` and `Memory=512` unless a higher size is explicitly approved.
 
 ## 5) Post-deploy smoke checks
 
