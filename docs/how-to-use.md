@@ -12,7 +12,8 @@ Model selection rule:
 
 Use these when you need a narrower operational guide:
 1. Generic onboarding runbook for any tool: `tool-onboarding.md`
-2. Key provisioning + rotation SOP: `proxy-key-provisioning.md`
+2. Agent-facing credential retrieval and runtime contract: see `tool-onboarding.md` sections `Agent-facing runtime contract`, `Where each runtime value comes from`, and `Recommended secret retrieval pattern for agents`
+3. Key provisioning + rotation SOP: `proxy-key-provisioning.md`
 
 ## Prerequisites
 

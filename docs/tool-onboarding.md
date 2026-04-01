@@ -24,7 +24,9 @@ Use the direct proxy path when:
 
 Do not use the direct proxy path for plugins, browser apps, or desktop apps you distribute.
 
-## Required inputs
+## Operator bootstrap inputs
+
+These values are needed only while creating or updating the project/tool in admin:
 
 ```bash
 export BASE_URL="https://nnm7du2h7j.eu-west-2.awsapprunner.com"
@@ -53,6 +55,139 @@ Notes:
 4. `OPENAI_API_KEY` is the raw project OpenAI key that the proxy encrypts and stores.
 5. `ADMIN_EMAIL` must be one of the allowlisted admin emails configured on `proxy-api`; it is not derived from the relay email-domain rule.
 6. Operators still sign in with the plaintext shared admin password, even when production runtime uses `ADMIN_PASSWORD_HASH`.
+
+## Agent-facing runtime contract
+
+An agent must decide the runtime path first. The required credentials are different.
+
+### Distributed client or distributed-agent app through the shared relay
+
+Fetch or derive exactly these values:
+1. `RELAY_BASE_URL`
+2. `RELAY_RESPONSES_URL`
+3. `RELAY_PASSWORD`
+4. End-user email for login, for example `person@bbc.com`
+5. The OpenAI `model` value the caller will send on each request
+
+Use them like this:
+1. Call `POST $RELAY_BASE_URL/v1/auth/login` with the user's email and the plaintext `RELAY_PASSWORD`.
+2. Read the returned session `token`.
+3. Call `POST $RELAY_RESPONSES_URL` with `Authorization: Bearer <token>`.
+
+### Trusted server tool through the proxy
+
+Fetch or derive exactly these values:
+1. `PROXY_BASE_URL`
+2. `PROXY_BEARER_TOKEN`
+3. The OpenAI `model` value the caller will send on each request
+
+Use them like this:
+1. Call `POST $PROXY_BASE_URL/responses`, `POST $PROXY_BASE_URL/embeddings`, or `GET $PROXY_BASE_URL/models`.
+2. Send `Authorization: Bearer $PROXY_BEARER_TOKEN` on every request.
+
+### Onboarding-only values that must not live in a shipped client
+
+These are for admin/bootstrap work, not normal runtime:
+1. `ADMIN_EMAIL`
+2. `ADMIN_PASSWORD`
+3. `OPENAI_API_KEY`
+
+### Values agents must never fetch into a tool runtime
+
+Do not use these in a consuming tool:
+1. `RELAY_PASSWORD_HASH`
+2. `ADMIN_PASSWORD_HASH`
+3. Raw project OpenAI keys in any distributed client
+4. Long-lived tool tokens in any distributed client
+
+Reason:
+1. `RELAY_PASSWORD_HASH` is only for `relay-api` to validate logins.
+2. A tool must send the plaintext relay password to `/v1/auth/login`; the hash is not accepted by the API.
+3. The proxy and relay store hashes server-side so callers do not need direct access to deployment secrets.
+
+## Where each runtime value comes from
+
+Agents should treat this list as the source-of-truth mapping.
+
+1. `PROXY_BASE_URL`
+   Source: derive from `BASE_URL` as `$BASE_URL/proxy/v1`.
+2. `RELAY_BASE_URL`
+   Source: environment-level relay host, currently `https://5z97x9cmtm.eu-west-2.awsapprunner.com` in production.
+3. `RELAY_RESPONSES_URL`
+   Source: returned by `POST /admin/tools` and `POST /admin/tools/:toolId/tokens`, or shown in the admin dashboard tools table.
+   Fallback: derive as `$RELAY_BASE_URL/v1/tools/$TOOL_SLUG/responses` when the relay base and slug are known.
+4. `PROXY_BEARER_TOKEN`
+   Source: returned once by `POST /admin/tools/:toolId/tokens`.
+   Required handling: store it immediately in the consuming server's secret store; do not commit it or ship it to clients.
+5. `RELAY_PASSWORD`
+   Source: the shared plaintext relay password held by operators.
+   Important: this repo does not expose the plaintext relay password over any admin or relay API.
+   Important: `/relay-api/RELAY_PASSWORD_HASH` in AWS SSM is a deployment secret for `relay-api`, not a caller credential.
+   Required handling: copy the plaintext shared relay password into the consuming tool's own secret store.
+6. `ADMIN_EMAIL`
+   Source: operator/admin credential for onboarding only.
+7. `ADMIN_PASSWORD`
+   Source: operator/admin credential for onboarding only.
+8. `OPENAI_API_KEY`
+   Source: raw OpenAI project key supplied during project key rotation only.
+
+## Recommended secret retrieval pattern for agents
+
+This repo manages `proxy-api` and `relay-api`. It does not manage the secret namespace of every consuming tool.
+
+For any new tool, store tool-side runtime values in that tool's own secret store, then fetch them at startup or deploy time. If the tool runs on AWS, use SSM Parameter Store or Secrets Manager under the tool's own namespace.
+
+Recommended tool-side names:
+1. `PROXY_BASE_URL`
+2. `PROXY_BEARER_TOKEN`
+3. `RELAY_BASE_URL`
+4. `RELAY_RESPONSES_URL`
+5. `RELAY_PASSWORD`
+
+Example AWS SSM fetch pattern for a server tool:
+
+```bash
+export TOOL_SECRET_PREFIX="/storyworks-alt-text"
+
+export PROXY_BASE_URL="$(aws ssm get-parameter \
+  --name "$TOOL_SECRET_PREFIX/PROXY_BASE_URL" \
+  --query 'Parameter.Value' \
+  --output text)"
+
+export PROXY_BEARER_TOKEN="$(aws ssm get-parameter \
+  --name "$TOOL_SECRET_PREFIX/PROXY_BEARER_TOKEN" \
+  --with-decryption \
+  --query 'Parameter.Value' \
+  --output text)"
+```
+
+Example AWS SSM fetch pattern for a distributed client backend or agent host:
+
+```bash
+export TOOL_SECRET_PREFIX="/storyworks-alt-text"
+
+export RELAY_BASE_URL="$(aws ssm get-parameter \
+  --name "$TOOL_SECRET_PREFIX/RELAY_BASE_URL" \
+  --query 'Parameter.Value' \
+  --output text)"
+
+export RELAY_RESPONSES_URL="$(aws ssm get-parameter \
+  --name "$TOOL_SECRET_PREFIX/RELAY_RESPONSES_URL" \
+  --query 'Parameter.Value' \
+  --output text)"
+
+export RELAY_PASSWORD="$(aws ssm get-parameter \
+  --name "$TOOL_SECRET_PREFIX/RELAY_PASSWORD" \
+  --with-decryption \
+  --query 'Parameter.Value' \
+  --output text)"
+```
+
+Do not fetch these App Runner deployment parameters into a tool:
+1. `/relay-api/RELAY_PASSWORD_HASH`
+2. `/proxy-api/ADMIN_PASSWORD_HASH`
+3. `/proxy-api/DATABASE_URL`
+4. `/proxy-api/KMS_KEY_ID`
 
 ## Current production environment
 
@@ -94,6 +229,7 @@ What implementers must not assume:
 1. Copying the relay URL into a plugin, desktop app, browser app, or agent config does not make requests work.
 2. A tool token from `/admin/tools/:toolId/tokens` is not the right auth primitive for distributed clients.
 3. Admin auth and relay auth are separate. Logging into the admin dashboard does not create a relay session for client traffic.
+4. `RELAY_PASSWORD_HASH` is not a client credential and should never be hard-coded into the tool.
 
 ## Environment-wide prerequisite: deploy the shared relay once
 
@@ -166,6 +302,11 @@ Outputs include:
 4. `token_expires_at`
 
 If you are onboarding a distributed client, you can ignore `tool_token`, but you still must implement relay login. The relay URL derived from `TOOL_SLUG` is only the destination path after authentication succeeds.
+
+After onboarding:
+1. For trusted server tools, store `PROXY_BASE_URL` and `PROXY_BEARER_TOKEN` in the tool's secret store.
+2. For distributed tools, store `RELAY_BASE_URL`, `RELAY_RESPONSES_URL`, and the plaintext `RELAY_PASSWORD` in the tool's secret store or operator-controlled runtime config.
+3. Do not store `RELAY_PASSWORD_HASH` in the tool.
 
 ## Admin API responses you can rely on
 
@@ -326,8 +467,9 @@ Server tool tokens:
 Relay shared password:
 1. Update `RELAY_PASSWORD_HASH` on the `relay-api` service.
 2. Deploy `relay-api`.
-3. Verify `POST /v1/auth/login`.
-4. Communicate the new shared relay password to users.
+3. Update every consuming tool's stored plaintext `RELAY_PASSWORD`.
+4. Verify `POST /v1/auth/login`.
+5. Communicate the new shared relay password to users when that tool relies on direct user entry.
 
 ## Common runtime failures
 
@@ -352,5 +494,6 @@ Complete only when all are true:
 3. Tool exists with the expected slug.
 4. Distributed clients use the derived relay URL, not a tool token.
 5. Trusted server tools store the tool token in server-side secrets only.
-6. Proxy smoke passes for any server tool path.
-7. Relay login and relay responses smoke pass for any distributed-client path.
+6. Distributed-client tools store the plaintext `RELAY_PASSWORD`, not `RELAY_PASSWORD_HASH`.
+7. Proxy smoke passes for any server tool path.
+8. Relay login and relay responses smoke pass for any distributed-client path.
