@@ -83,7 +83,7 @@ Save command output. You need:
 Smoke check with new token:
 
 ```bash
-scripts/smoke-proxy.sh "$BASE_URL" "<tool_token>" "gpt-4.1-mini"
+scripts/smoke-proxy.sh "$BASE_URL" "<tool_token>" "<responses_model>"
 ```
 
 ## 5) Store outputs in SSM

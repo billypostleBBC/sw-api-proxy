@@ -4,6 +4,10 @@ This guide covers two tasks:
 1. Add or rotate an OpenAI API key for a project.
 2. Point server tools at the proxy and distributed clients at the shared relay so raw OpenAI keys and long-lived tool tokens stay server-side.
 
+Model selection rule:
+1. SW API Proxy does not choose a model.
+2. The caller must send the OpenAI model it wants to use for each request.
+
 ## Focused runbooks
 
 Use these when you need a narrower operational guide:
@@ -52,7 +56,7 @@ Keep using this path while the admin UI is still being refined. It is the fastes
 7. Run the smoke test:
 
 ```bash
-scripts/smoke-proxy.sh "$BASE_URL" "<tool_token>" "gpt-4.1-mini"
+scripts/smoke-proxy.sh "$BASE_URL" "<tool_token>" "<responses_model>"
 ```
 
 If you prefer CLI instead of the browser dashboard, use the API flow below.
@@ -163,7 +167,7 @@ curl -s -X POST "$RELAY_BASE_URL/v1/tools/storyworks-ai-assistant/responses" \
   -H "Authorization: Bearer <relay_session_token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-4.1-mini",
+    "model": "<responses_model>",
     "input": "Return one sentence saying relay connectivity is working."
   }'
 ```
@@ -215,7 +219,7 @@ curl -s -X POST "$PROXY_BASE_URL/responses" \
   -H "Authorization: Bearer $PROXY_BEARER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-4.1-mini",
+    "model": "<responses_model>",
     "input": "Return one sentence saying proxy connectivity is working."
   }'
 ```
@@ -227,7 +231,7 @@ curl -s -X POST "$PROXY_BASE_URL/embeddings" \
   -H "Authorization: Bearer $PROXY_BEARER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "text-embedding-3-small",
+    "model": "<embedding_model>",
     "input": "BBC StoryWorks"
   }'
 ```

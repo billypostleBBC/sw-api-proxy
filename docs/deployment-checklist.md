@@ -57,7 +57,7 @@ For both:
 ### `proxy-api`
 1. `GET /health` returns `200` and `{"ok":true}`.
 2. Admin login endpoint responds as expected.
-3. `scripts/smoke-proxy.sh <base_url> <tool_token> [model]` passes.
+3. `scripts/smoke-proxy.sh <base_url> <tool_token> <model>` passes when you provide the model your caller uses.
 4. `/admin/tools` returns derived `relayResponsesUrl` values when `RELAY_PUBLIC_BASE_URL` is set.
 
 ### `relay-api`

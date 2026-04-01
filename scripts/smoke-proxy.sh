@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 2 || $# -gt 3 ]]; then
+if [[ $# -ne 3 ]]; then
   cat <<'USAGE'
 Usage:
-  scripts/smoke-proxy.sh <base_url> <tool_token> [model]
+  scripts/smoke-proxy.sh <base_url> <tool_token> <model>
 
 Example:
-  scripts/smoke-proxy.sh https://proxy.example.com tt.x.y gpt-4.1-mini
+  scripts/smoke-proxy.sh https://proxy.example.com tt.x.y <responses_model>
 USAGE
   exit 1
 fi
 
 BASE_URL="$1"
 TOOL_TOKEN="$2"
-MODEL="${3:-gpt-4.1-mini}"
+MODEL="$3"
 
 BODY_FILE=$(mktemp)
 trap 'rm -f "$BODY_FILE"' EXIT

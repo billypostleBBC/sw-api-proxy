@@ -4,6 +4,10 @@ This guide covers creating, rotating, and storing project key material and tool 
 
 Distributed clients should use the shared relay URL exposed by `/admin/tools` and authenticate with `POST /v1/auth/login`. They do not need tool tokens.
 
+Model selection rule:
+1. SW API Proxy does not choose a model.
+2. The caller must send the OpenAI model it wants to use on each request.
+
 ## 1) What is being provisioned
 
 Two different credentials are involved for server tools:
@@ -60,7 +64,7 @@ scripts/onboard-server-tool.sh \
 Step C: Smoke check
 
 ```bash
-scripts/smoke-proxy.sh "$BASE_URL" "<tool_token>" "gpt-4.1-mini"
+scripts/smoke-proxy.sh "$BASE_URL" "<tool_token>" "<responses_model>"
 ```
 
 ## 3) API fallback flow (secondary)
@@ -140,7 +144,7 @@ curl -s -X GET "$BASE_URL/proxy/v1/models" \
 curl -s -X POST "$BASE_URL/proxy/v1/responses" \
   -H "Authorization: Bearer <tool_token>" \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4.1-mini","input":"proxy smoke test"}'
+  -d '{"model":"<responses_model>","input":"proxy smoke test"}'
 ```
 
 ## 4) SSM storage pattern
