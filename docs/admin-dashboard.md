@@ -4,7 +4,7 @@ This guide explains how to use the web admin dashboard at:
 
 - `https://<your-proxy-host>/admin`
 
-Use this when you want to manage projects, OpenAI keys, tools, tool tokens, and usage without calling admin APIs manually.
+Use this when you want to manage projects, OpenAI keys, tools, proxy tokens, relay tokens, and usage without calling admin APIs manually.
 
 ## What the dashboard can do
 
@@ -12,9 +12,10 @@ Use this when you want to manage projects, OpenAI keys, tools, tool tokens, and 
 2. Create projects.
 3. Rotate active OpenAI key for a project.
 4. Create tools.
-5. Mint and revoke tool tokens.
-6. Soft-delete projects and tools (deactivate).
-7. View recent usage events with filters.
+5. Mint and revoke proxy tokens for server tools.
+6. Mint and revoke relay tokens for distributed tools.
+7. Soft-delete projects and tools (deactivate).
+8. View recent usage events with filters.
 
 ## Prerequisites
 
@@ -110,9 +111,9 @@ Click `Create tool`.
 Notes:
 1. The tools table hides inactive tools by default. Use `Show inactive` to include them.
 
-### Mint tool token
+### Mint proxy token
 
-Use `Mint tool token` with:
+Use `Mint proxy token` with:
 1. `tool id`
 
 Click `Mint token`.
@@ -123,13 +124,27 @@ Important:
 3. Token format is `tt.<id>.<secret>`.
 4. Expiry is shown in the panel (`TOOL_TOKEN_TTL_DAYS`, default 90 days).
 
+### Mint relay token
+
+Use `Mint relay token` with:
+1. `tool id`
+
+Click `Mint token`.
+
+Important:
+1. Token is displayed once in the warning panel.
+2. Store it immediately in the distributed tool's secret store or runtime config.
+3. Token format is `rt.<id>.<secret>`.
+4. The panel includes the relay responses URL for copy/paste convenience.
+5. Expiry is shown in the panel (`TOOL_TOKEN_TTL_DAYS`, default 90 days).
+
 ### Token list & revoke
 
 Use the token list panel to revoke tokens without pasting secrets.
 
 Flow:
-1. Select `Tokens` from the tool row you want to inspect.
-2. The panel shows token IDs and status (active/revoked).
+1. Select `Proxy tokens` or `Relay tokens` from the tool row you want to inspect.
+2. The panel shows token type, token IDs, and status (active/revoked).
 3. Click `Revoke` to deactivate a token.
 
 Notes:
@@ -172,9 +187,10 @@ For a new tool, do this in order:
 1. Create project.
 2. Rotate project API key.
 3. Create tool.
-4. Mint tool token.
-5. Store token in backend secret storage.
-6. Test with `scripts/smoke-proxy.sh`.
+4. Mint a proxy token if the tool runs only on infrastructure you control.
+5. Mint a relay token if the tool is distributed to browsers, plugins, or desktop clients.
+6. Store the chosen token in the right runtime secret store.
+7. Test the runtime path you actually plan to ship.
 
 ## Common problems
 

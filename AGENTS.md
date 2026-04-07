@@ -9,7 +9,7 @@ If a request conflicts with this file, update this file first or do not implemen
 ## Repository Snapshot (as of 2026-03-17)
 TypeScript Fastify services for internal AI tooling with:
 1. Admin email/password auth with allowlist-gated session cookies.
-2. Client-facing relay auth with BBC email + shared password and short-lived bearer sessions.
+2. Client-facing relay auth with per-tool bearer tokens for distributed tools, plus temporary legacy BBC email + shared password session compatibility.
 3. Slug-routed relay responses endpoint for distributed tools.
 4. Project/tool management with per-project limits and admin soft-delete controls.
 5. Admin dashboard management for projects, tools, tool tokens, usage, and in-app help content.
@@ -36,9 +36,10 @@ TypeScript Fastify services for internal AI tooling with:
 5. Support current auth flows:
    - Admin login: email + shared password.
    - Admin session cookie enforcement for admin routes.
-   - Tool bearer tokens.
-   - Relay login: BBC email + shared password.
-   - Relay bearer session enforcement for client-facing relay routes.
+   - Proxy tool bearer tokens for `/proxy/*`.
+   - Relay tool bearer tokens for distributed relay routes.
+   - Legacy relay login: BBC email + shared password, kept temporarily for migration compatibility only.
+   - Relay bearer token enforcement for client-facing relay routes.
 6. Enforce per-project RPM and daily token caps.
 7. Persist operational data in existing tables (`projects`, `tools`, `tool_tokens`, `usage_events`, `audit_logs`, `sessions`, etc.).
 
@@ -57,7 +58,7 @@ TypeScript Fastify services for internal AI tooling with:
 4. Keep error payload shape consistent with `sendError`:
    - `{ error, message, details? }`
 5. Preserve existing auth token primitives:
-   - Opaque tokens for admin sessions and tool tokens.
+   - Opaque tokens for admin sessions, proxy tool tokens, and relay tool tokens.
 6. Preserve DB-first approach:
    - Additive schema changes via `src/db/migrations.ts`.
    - Keep data access in `src/db/repo.ts`.
@@ -68,7 +69,7 @@ TypeScript Fastify services for internal AI tooling with:
 2. Keep secrets in env/secret manager only (`DATABASE_URL`, signing keys, AWS config, etc.).
 3. Keep sensitive log redaction intact (auth headers, key payloads, cookies).
 4. All auth/session/token checks must fail closed (invalid/missing token => deny).
-5. Distributed clients must authenticate to relay routes with short-lived sessions, not long-lived tool tokens.
+5. Distributed clients must authenticate to relay routes with per-tool relay bearer tokens; legacy short-lived relay sessions may remain only as temporary compatibility during migration.
 
 ## Testing Requirements
 1. Keep `npm test` passing (Vitest).
@@ -108,3 +109,4 @@ Any meaningful requirement change must update this file in the same change set, 
 - 2026-03-12: Expanded MVP scope to include a separate shared relay service with BBC email + shared password login, bearer relay sessions, and slug-routed `responses` access for distributed tools.
 - 2026-03-17: Cost-optimized production runtime by decommissioning active legacy ECS/ALB/EC2 resources, right-sizing App Runner services to `256/512`, and removing the dedicated KMS VPC endpoint; deployment docs now treat this as the default low-cost baseline.
 - 2026-03-17: Added admin dashboard soft-delete flows for projects/tools, visible tool-token management, inactive-record filters, and dark-mode/help UX while preserving usage history.
+- 2026-04-07: Simplified distributed-tool relay auth to per-tool relay bearer tokens minted in the admin dashboard, while keeping legacy relay login/session compatibility temporarily during migration.

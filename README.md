@@ -5,8 +5,9 @@ MVP TypeScript services for securely routing OpenAI requests to internal tools a
 ## Features
 - KMS-encrypted OpenAI key storage per project.
 - Admin auth via allowlisted email + shared password.
-- Shared relay auth via BBC Studios (`@bbc.com`) email + shared password with daily bearer sessions.
-- Tool auth via long-lived hashed tokens.
+- Shared relay auth via per-tool relay bearer tokens for distributed clients.
+- Legacy relay login via BBC Studios (`@bbc.com`) email + shared password kept temporarily for migration compatibility.
+- Separate proxy and relay token scopes with hashed server-side storage.
 - Proxy endpoints:
   - `POST /proxy/v1/responses`
   - `POST /proxy/v1/embeddings`
@@ -68,6 +69,9 @@ Defaults:
 - `POST /admin/tools`
 - `POST /admin/tools/:toolId/tokens`
 - `POST /admin/tools/:toolId/tokens/:tokenId/revoke`
+- `POST /admin/tools/:toolId/relay-tokens`
+- `GET /admin/tools/:toolId/relay-tokens`
+- `POST /admin/tools/:toolId/relay-tokens/:tokenId/revoke`
 - `GET /admin/usage`
 
 ### Proxy

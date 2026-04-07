@@ -1,4 +1,5 @@
 export type Scope = "admin" | "user";
+export type ToolTokenScope = "proxy" | "relay";
 
 export type AuthContext = {
   mode: "tool";

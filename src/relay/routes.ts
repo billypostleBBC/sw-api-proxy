@@ -7,7 +7,8 @@ import { responsesSchema, sendResponsesRequest } from "../openai/responses.js";
 import { UsageService } from "../usage/service.js";
 import { sendError } from "../utils/http.js";
 import { safeEqualHex, sha256 } from "../utils/crypto.js";
-import { resolveRelaySessionEmail } from "./auth.js";
+import type { AuthContext } from "../db/types.js";
+import { resolveRelayAuth } from "./auth.js";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -17,6 +18,21 @@ const loginSchema = z.object({
 function hasAllowedRelayDomain(email: string, domains: Set<string>): boolean {
   const domain = email.toLowerCase().trim().split("@")[1];
   return Boolean(domain && domains.has(domain));
+}
+
+function assertRelayTargetActive(
+  reply: Parameters<typeof sendError>[0],
+  auth: Pick<AuthContext, "toolStatus" | "projectStatus">
+): boolean {
+  if (auth.toolStatus !== "active") {
+    sendError(reply, 403, "forbidden", "Tool is inactive");
+    return false;
+  }
+  if (auth.projectStatus !== "active") {
+    sendError(reply, 403, "forbidden", "Project is inactive");
+    return false;
+  }
+  return true;
 }
 
 export function registerRelayRoutes(
@@ -69,8 +85,8 @@ export function registerRelayRoutes(
   });
 
   app.post("/v1/tools/:toolSlug/responses", async (request, reply) => {
-    const email = await resolveRelaySessionEmail(request, deps.authService);
-    if (!email) {
+    const auth = await resolveRelayAuth(request, app.repo, deps.authService);
+    if (!auth) {
       return sendError(reply, 401, "unauthorized", "Missing or invalid bearer token");
     }
 
@@ -84,12 +100,35 @@ export function registerRelayRoutes(
       return sendError(reply, 400, "bad_request", "Invalid tool slug");
     }
 
+    if (auth.kind === "relay_token") {
+      if (auth.auth.toolSlug !== toolSlug) {
+        return sendError(reply, 403, "forbidden", "Relay token does not match tool");
+      }
+      if (!assertRelayTargetActive(reply, auth.auth)) {
+        return;
+      }
+
+      return sendResponsesRequest(
+        app,
+        reply,
+        deps,
+        {
+          toolId: auth.auth.toolId,
+          projectId: auth.auth.projectId,
+          projectStatus: auth.auth.projectStatus,
+          rpmCap: auth.auth.rpmCap,
+          dailyTokenCap: auth.auth.dailyTokenCap
+        },
+        parsedBody.data
+      );
+    }
+
     const tool = await app.repo.findToolBySlug(toolSlug);
     if (!tool) {
       return sendError(reply, 404, "not_found", "Tool not found");
     }
-    if (tool.toolStatus !== "active") {
-      return sendError(reply, 403, "forbidden", "Tool is inactive");
+    if (!assertRelayTargetActive(reply, tool)) {
+      return;
     }
 
     return sendResponsesRequest(

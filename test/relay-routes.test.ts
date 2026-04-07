@@ -3,9 +3,24 @@ import { describe, expect, it, vi } from "vitest";
 import { registerRelayRoutes } from "../src/relay/routes.js";
 import { sha256 } from "../src/utils/crypto.js";
 
+function makeRelayAuthContext() {
+  return {
+    mode: "tool",
+    toolId: 8,
+    toolSlug: "story-assistant-server",
+    toolStatus: "active",
+    projectId: 10,
+    projectSlug: "story-assistant-prod",
+    projectStatus: "active",
+    rpmCap: 60,
+    dailyTokenCap: 2000000
+  };
+}
+
 async function buildRelayTestApp() {
   const app = Fastify();
   const repo = {
+    findAuthByRelayToken: vi.fn().mockResolvedValue(null),
     findToolBySlug: vi.fn(),
     getActiveProjectKey: vi.fn()
   };
@@ -164,7 +179,7 @@ describe("relay login route", () => {
 });
 
 describe("relay responses route", () => {
-  it("rejects missing relay session bearer token", async () => {
+  it("rejects missing relay bearer token", async () => {
     const { app } = await buildRelayTestApp();
 
     const response = await app.inject({
@@ -184,23 +199,151 @@ describe("relay responses route", () => {
     await app.close();
   });
 
-  it("rejects inactive tool", async () => {
-    const { app, repo, limitService, kmsService } = await buildRelayTestApp();
-    repo.findToolBySlug.mockResolvedValue({
-      toolId: 8,
+  it("accepts valid relay token and forwards successful upstream responses unchanged", async () => {
+    const { app, repo, usageService, kmsService, openaiClient } = await buildRelayTestApp();
+    repo.findAuthByRelayToken.mockResolvedValue(makeRelayAuthContext());
+    repo.getActiveProjectKey.mockResolvedValue({
+      kmsCiphertext: "ciphertext"
+    });
+    openaiClient.request.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "resp_1",
+          output: [{ type: "output_text", text: "Relay connectivity is working." }],
+          usage: { input_tokens: 12, output_tokens: 7 }
+        }),
+        { status: 200 }
+      )
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/tools/story-assistant-server/responses",
+      headers: {
+        authorization: "Bearer rt.valid.secret"
+      },
+      payload: {
+        model: "gpt-4.1-mini",
+        input: "ping"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(repo.findAuthByRelayToken).toHaveBeenCalledWith("rt.valid.secret");
+    expect(repo.findToolBySlug).not.toHaveBeenCalled();
+    expect(kmsService.decrypt).toHaveBeenCalledWith("ciphertext");
+    expect(openaiClient.request).toHaveBeenCalledWith("/v1/responses", "sk-live-key", {
+      model: "gpt-4.1-mini",
+      input: "ping"
+    });
+    expect(usageService.log).toHaveBeenCalledWith({
       projectId: 10,
-      projectSlug: "story-assistant-prod",
-      toolStatus: "inactive",
-      projectStatus: "active",
-      rpmCap: 60,
-      dailyTokenCap: 2000000
+      toolId: 8,
+      endpoint: "/v1/responses",
+      model: "gpt-4.1-mini",
+      inputTokens: 12,
+      outputTokens: 7,
+      estimatedCostUsd: null,
+      statusCode: 200,
+      latencyMs: expect.any(Number)
+    });
+    await app.close();
+  });
+
+  it("rejects proxy tool token on relay route", async () => {
+    const { app, repo, authService } = await buildRelayTestApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/tools/story-assistant-server/responses",
+      headers: {
+        authorization: "Bearer tt.proxy.secret"
+      },
+      payload: {
+        model: "gpt-4.1-mini",
+        input: "ping"
+      }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(repo.findAuthByRelayToken).toHaveBeenCalledWith("tt.proxy.secret");
+    expect(authService.getSessionEmail).toHaveBeenCalledWith("user", "tt.proxy.secret");
+    expect(response.json()).toEqual({
+      error: "unauthorized",
+      message: "Missing or invalid bearer token"
+    });
+    await app.close();
+  });
+
+  it("rejects revoked or expired relay token", async () => {
+    const { app, repo, authService } = await buildRelayTestApp();
+    repo.findAuthByRelayToken.mockResolvedValue(null);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/tools/story-assistant-server/responses",
+      headers: {
+        authorization: "Bearer rt.revoked.secret"
+      },
+      payload: {
+        model: "gpt-4.1-mini",
+        input: "ping"
+      }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(repo.findAuthByRelayToken).toHaveBeenCalledWith("rt.revoked.secret");
+    expect(authService.getSessionEmail).toHaveBeenCalledWith("user", "rt.revoked.secret");
+    expect(response.json()).toEqual({
+      error: "unauthorized",
+      message: "Missing or invalid bearer token"
+    });
+    await app.close();
+  });
+
+  it("rejects relay token when route slug does not match token tool", async () => {
+    const { app, repo, limitService, kmsService } = await buildRelayTestApp();
+    repo.findAuthByRelayToken.mockResolvedValue({
+      ...makeRelayAuthContext(),
+      toolSlug: "other-tool"
     });
 
     const response = await app.inject({
       method: "POST",
       url: "/v1/tools/story-assistant-server/responses",
       headers: {
-        authorization: "Bearer st.valid.secret"
+        authorization: "Bearer rt.valid.secret"
+      },
+      payload: {
+        model: "gpt-4.1-mini",
+        input: "ping"
+      }
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({
+      error: "forbidden",
+      message: "Relay token does not match tool"
+    });
+    expect(limitService.enforce).not.toHaveBeenCalled();
+    expect(repo.getActiveProjectKey).not.toHaveBeenCalled();
+    expect(kmsService.decrypt).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("rejects inactive tool", async () => {
+    const { app, repo, limitService, kmsService } = await buildRelayTestApp();
+    repo.findAuthByRelayToken.mockResolvedValue({
+      ...makeRelayAuthContext(),
+      toolStatus: "inactive",
+      projectStatus: "active"
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/tools/story-assistant-server/responses",
+      headers: {
+        authorization: "Bearer rt.valid.secret"
       },
       payload: {
         model: "gpt-4.1-mini",
@@ -221,21 +364,17 @@ describe("relay responses route", () => {
 
   it("rejects inactive project", async () => {
     const { app, repo, limitService, kmsService } = await buildRelayTestApp();
-    repo.findToolBySlug.mockResolvedValue({
-      toolId: 8,
-      projectId: 10,
-      projectSlug: "story-assistant-prod",
+    repo.findAuthByRelayToken.mockResolvedValue({
+      ...makeRelayAuthContext(),
       toolStatus: "active",
-      projectStatus: "inactive",
-      rpmCap: 60,
-      dailyTokenCap: 2000000
+      projectStatus: "inactive"
     });
 
     const response = await app.inject({
       method: "POST",
       url: "/v1/tools/story-assistant-server/responses",
       headers: {
-        authorization: "Bearer st.valid.secret"
+        authorization: "Bearer rt.valid.secret"
       },
       payload: {
         model: "gpt-4.1-mini",
@@ -256,22 +395,14 @@ describe("relay responses route", () => {
 
   it("rejects missing project key", async () => {
     const { app, repo, limitService, kmsService } = await buildRelayTestApp();
-    repo.findToolBySlug.mockResolvedValue({
-      toolId: 8,
-      projectId: 10,
-      projectSlug: "story-assistant-prod",
-      toolStatus: "active",
-      projectStatus: "active",
-      rpmCap: 60,
-      dailyTokenCap: 2000000
-    });
+    repo.findAuthByRelayToken.mockResolvedValue(makeRelayAuthContext());
     repo.getActiveProjectKey.mockResolvedValue(null);
 
     const response = await app.inject({
       method: "POST",
       url: "/v1/tools/story-assistant-server/responses",
       headers: {
-        authorization: "Bearer st.valid.secret"
+        authorization: "Bearer rt.valid.secret"
       },
       payload: {
         model: "gpt-4.1-mini",
@@ -289,7 +420,7 @@ describe("relay responses route", () => {
     await app.close();
   });
 
-  it("logs usage and forwards successful upstream responses unchanged", async () => {
+  it("keeps legacy session auth working during migration", async () => {
     const { app, repo, usageService, kmsService, openaiClient } = await buildRelayTestApp();
     repo.findToolBySlug.mockResolvedValue({
       toolId: 8,
@@ -327,6 +458,7 @@ describe("relay responses route", () => {
     });
 
     expect(response.statusCode).toBe(200);
+    expect(repo.findAuthByRelayToken).toHaveBeenCalledWith("st.valid.secret");
     expect(kmsService.decrypt).toHaveBeenCalledWith("ciphertext");
     expect(openaiClient.request).toHaveBeenCalledWith("/v1/responses", "sk-live-key", {
       model: "gpt-4.1-mini",

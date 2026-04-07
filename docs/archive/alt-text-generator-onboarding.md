@@ -4,6 +4,10 @@ This file is retained as a historical example only.
 
 For the current generic onboarding path, use `../tool-onboarding.md`.
 
+Important:
+1. This archived example predates relay-scoped `rt...` tokens for distributed clients.
+2. Treat any auth guidance here as backend/server-path history, not the current default for distributed tools.
+
 This runbook onboards Alt-text Generator to SW API Proxy and defines migration constraints for a backend-relay architecture.
 
 ## 1) Scope and architecture decision

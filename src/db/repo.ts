@@ -1,9 +1,10 @@
 import type pg from "pg";
 import { parseOpaqueToken, safeEqualHex, sha256 } from "../utils/crypto.js";
-import type { AuthContext, Scope } from "./types.js";
+import type { AuthContext, Scope, ToolTokenScope } from "./types.js";
 
 type ToolTokenRow = {
   id: string;
+  scope: ToolTokenScope;
   token_hash: string;
   expires_at: Date;
   status: string;
@@ -38,6 +39,7 @@ type ToolRow = {
 
 type ToolTokenSummaryRow = {
   id: string;
+  scope: ToolTokenScope;
   status: string;
   expires_at: Date;
   last_used_at: Date | null;
@@ -227,27 +229,29 @@ export class Repo {
     tokenHash: string;
     toolId: number;
     expiresAt: Date;
+    scope: ToolTokenScope;
   }): Promise<void> {
     await this.pool.query(
-      `INSERT INTO tool_tokens (id, tool_id, token_hash, expires_at, status)
-       VALUES ($1, $2, $3, $4, 'active')`,
-      [input.tokenId, input.toolId, input.tokenHash, input.expiresAt]
+      `INSERT INTO tool_tokens (id, tool_id, scope, token_hash, expires_at, status)
+       VALUES ($1, $2, $3, $4, $5, 'active')`,
+      [input.tokenId, input.toolId, input.scope, input.tokenHash, input.expiresAt]
     );
   }
 
-  async listToolTokens(toolId: number): Promise<
-    Array<{ id: string; status: string; expiresAt: Date; lastUsedAt: Date | null; createdAt: Date }>
+  async listToolTokens(toolId: number, scope: ToolTokenScope): Promise<
+    Array<{ id: string; scope: ToolTokenScope; status: string; expiresAt: Date; lastUsedAt: Date | null; createdAt: Date }>
   > {
     const result = await this.pool.query<ToolTokenSummaryRow>(
-      `SELECT id, status, expires_at, last_used_at, created_at
+      `SELECT id, scope, status, expires_at, last_used_at, created_at
        FROM tool_tokens
-       WHERE tool_id = $1
+       WHERE tool_id = $1 AND scope = $2
        ORDER BY created_at DESC`,
-      [toolId]
+      [toolId, scope]
     );
 
     return result.rows.map((row) => ({
       id: row.id,
+      scope: row.scope,
       status: row.status,
       expiresAt: row.expires_at,
       lastUsedAt: row.last_used_at,
@@ -255,12 +259,12 @@ export class Repo {
     }));
   }
 
-  async revokeToolToken(toolId: number, tokenId: string): Promise<boolean> {
+  async revokeToolToken(toolId: number, tokenId: string, scope: ToolTokenScope): Promise<boolean> {
     const result = await this.pool.query(
       `UPDATE tool_tokens
        SET status = 'revoked', updated_at = now()
-       WHERE id = $1 AND tool_id = $2`,
-      [tokenId, toolId]
+       WHERE id = $1 AND tool_id = $2 AND scope = $3`,
+      [tokenId, toolId, scope]
     );
     return (result.rowCount ?? 0) > 0;
   }
@@ -343,13 +347,22 @@ export class Repo {
   }
 
   async findAuthByToolToken(rawToken: string): Promise<AuthContext | null> {
-    const parsed = parseOpaqueToken(rawToken, "tt");
+    return this.findAuthByScopedToolToken(rawToken, "tt", "proxy");
+  }
+
+  async findAuthByRelayToken(rawToken: string): Promise<AuthContext | null> {
+    return this.findAuthByScopedToolToken(rawToken, "rt", "relay");
+  }
+
+  private async findAuthByScopedToolToken(rawToken: string, prefix: "tt" | "rt", scope: ToolTokenScope): Promise<AuthContext | null> {
+    const parsed = parseOpaqueToken(rawToken, prefix);
     if (!parsed) {
       return null;
     }
     const row = await this.pool.query<ToolTokenRow>(
       `SELECT
          tt.id,
+         tt.scope,
          tt.token_hash,
          tt.expires_at,
          tt.status,
@@ -364,8 +377,8 @@ export class Repo {
        FROM tool_tokens tt
        JOIN tools t ON t.id = tt.tool_id
        JOIN projects p ON p.id = t.project_id
-       WHERE tt.id = $1`,
-      [parsed.id]
+       WHERE tt.id = $1 AND tt.scope = $2`,
+      [parsed.id, scope]
     );
     const token = row.rows[0];
     if (!token) {
@@ -378,7 +391,10 @@ export class Repo {
       return null;
     }
 
-    await this.pool.query(`UPDATE tool_tokens SET last_used_at = now(), updated_at = now() WHERE id = $1`, [token.id]);
+    await this.pool.query(`UPDATE tool_tokens SET last_used_at = now(), updated_at = now() WHERE id = $1 AND scope = $2`, [
+      token.id,
+      scope
+    ]);
 
     return {
       mode: "tool",

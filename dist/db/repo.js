@@ -110,26 +110,27 @@ export class Repo {
         };
     }
     async createToolToken(input) {
-        await this.pool.query(`INSERT INTO tool_tokens (id, tool_id, token_hash, expires_at, status)
-       VALUES ($1, $2, $3, $4, 'active')`, [input.tokenId, input.toolId, input.tokenHash, input.expiresAt]);
+        await this.pool.query(`INSERT INTO tool_tokens (id, tool_id, scope, token_hash, expires_at, status)
+       VALUES ($1, $2, $3, $4, $5, 'active')`, [input.tokenId, input.toolId, input.scope, input.tokenHash, input.expiresAt]);
     }
-    async listToolTokens(toolId) {
-        const result = await this.pool.query(`SELECT id, status, expires_at, last_used_at, created_at
+    async listToolTokens(toolId, scope) {
+        const result = await this.pool.query(`SELECT id, scope, status, expires_at, last_used_at, created_at
        FROM tool_tokens
-       WHERE tool_id = $1
-       ORDER BY created_at DESC`, [toolId]);
+       WHERE tool_id = $1 AND scope = $2
+       ORDER BY created_at DESC`, [toolId, scope]);
         return result.rows.map((row) => ({
             id: row.id,
+            scope: row.scope,
             status: row.status,
             expiresAt: row.expires_at,
             lastUsedAt: row.last_used_at,
             createdAt: row.created_at
         }));
     }
-    async revokeToolToken(toolId, tokenId) {
+    async revokeToolToken(toolId, tokenId, scope) {
         const result = await this.pool.query(`UPDATE tool_tokens
        SET status = 'revoked', updated_at = now()
-       WHERE id = $1 AND tool_id = $2`, [tokenId, toolId]);
+       WHERE id = $1 AND tool_id = $2 AND scope = $3`, [tokenId, toolId, scope]);
         return (result.rowCount ?? 0) > 0;
     }
     async deactivateTool(toolId) {
@@ -193,12 +194,19 @@ export class Repo {
         }
     }
     async findAuthByToolToken(rawToken) {
-        const parsed = parseOpaqueToken(rawToken, "tt");
+        return this.findAuthByScopedToolToken(rawToken, "tt", "proxy");
+    }
+    async findAuthByRelayToken(rawToken) {
+        return this.findAuthByScopedToolToken(rawToken, "rt", "relay");
+    }
+    async findAuthByScopedToolToken(rawToken, prefix, scope) {
+        const parsed = parseOpaqueToken(rawToken, prefix);
         if (!parsed) {
             return null;
         }
         const row = await this.pool.query(`SELECT
          tt.id,
+         tt.scope,
          tt.token_hash,
          tt.expires_at,
          tt.status,
@@ -213,7 +221,7 @@ export class Repo {
        FROM tool_tokens tt
        JOIN tools t ON t.id = tt.tool_id
        JOIN projects p ON p.id = t.project_id
-       WHERE tt.id = $1`, [parsed.id]);
+       WHERE tt.id = $1 AND tt.scope = $2`, [parsed.id, scope]);
         const token = row.rows[0];
         if (!token) {
             return null;
@@ -224,7 +232,10 @@ export class Repo {
         if (!safeEqualHex(sha256(parsed.secret), token.token_hash)) {
             return null;
         }
-        await this.pool.query(`UPDATE tool_tokens SET last_used_at = now(), updated_at = now() WHERE id = $1`, [token.id]);
+        await this.pool.query(`UPDATE tool_tokens SET last_used_at = now(), updated_at = now() WHERE id = $1 AND scope = $2`, [
+            token.id,
+            scope
+        ]);
         return {
             mode: "tool",
             toolId: token.tool_id,

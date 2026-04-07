@@ -398,9 +398,47 @@ describe("admin discovery routes", () => {
     expect(response.statusCode).toBe(201);
     expect(repo.getToolById).toHaveBeenCalledWith(8);
     expect(repo.createToolToken).toHaveBeenCalledTimes(1);
+    expect(repo.createToolToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolId: 8,
+        scope: "proxy"
+      })
+    );
     expect(response.json().relayResponsesUrl).toBe("https://relay.example.com/v1/tools/story-assistant-server/responses");
     expect(response.json().expiresAt).toMatch(/^20\d\d-/);
     expect(response.json().token).toMatch(/^tt\./);
+    await app.close();
+  });
+
+  it("mints relay token alongside relay URL", async () => {
+    const { app, repo, usageService } = await buildAdminTestApp({
+      relayPublicBaseUrl: "https://relay.example.com"
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/tools/8/relay-tokens",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(repo.getToolById).toHaveBeenCalledWith(8);
+    expect(repo.createToolToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolId: 8,
+        scope: "relay"
+      })
+    );
+    expect(response.json().relayResponsesUrl).toBe("https://relay.example.com/v1/tools/story-assistant-server/responses");
+    expect(response.json().expiresAt).toMatch(/^20\d\d-/);
+    expect(response.json().token).toMatch(/^rt\./);
+    expect(usageService.audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "tool.relay_token.created"
+      })
+    );
     await app.close();
   });
 
@@ -409,6 +447,7 @@ describe("admin discovery routes", () => {
     repo.listToolTokens.mockResolvedValue([
       {
         id: "tok_123",
+        scope: "proxy",
         status: "active",
         expiresAt: new Date("2026-04-01T12:00:00.000Z"),
         lastUsedAt: null,
@@ -425,11 +464,50 @@ describe("admin discovery routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(repo.listToolTokens).toHaveBeenCalledWith(8);
+    expect(repo.listToolTokens).toHaveBeenCalledWith(8, "proxy");
     expect(response.json()).toEqual({
       tokens: [
         {
           id: "tok_123",
+          scope: "proxy",
+          status: "active",
+          expiresAt: "2026-04-01T12:00:00.000Z",
+          lastUsedAt: null,
+          createdAt: "2026-03-17T12:00:00.000Z"
+        }
+      ]
+    });
+    await app.close();
+  });
+
+  it("lists relay token summaries", async () => {
+    const { app, repo } = await buildAdminTestApp();
+    repo.listToolTokens.mockResolvedValue([
+      {
+        id: "relay_123",
+        scope: "relay",
+        status: "active",
+        expiresAt: new Date("2026-04-01T12:00:00.000Z"),
+        lastUsedAt: null,
+        createdAt: new Date("2026-03-17T12:00:00.000Z")
+      }
+    ]);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/tools/8/relay-tokens",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(repo.listToolTokens).toHaveBeenCalledWith(8, "relay");
+    expect(response.json()).toEqual({
+      tokens: [
+        {
+          id: "relay_123",
+          scope: "relay",
           status: "active",
           expiresAt: "2026-04-01T12:00:00.000Z",
           lastUsedAt: null,
@@ -457,7 +535,29 @@ describe("admin discovery routes", () => {
       error: "not_found",
       message: "Tool token not found"
     });
-    expect(repo.revokeToolToken).toHaveBeenCalledWith(8, "not-owned");
+    expect(repo.revokeToolToken).toHaveBeenCalledWith(8, "not-owned", "proxy");
+    await app.close();
+  });
+
+  it("revokes relay token through relay-token route", async () => {
+    const { app, repo, usageService } = await buildAdminTestApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/tools/8/relay-tokens/relay_123/revoke",
+      headers: {
+        cookie: "admin_session=st.fake.fake"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(repo.revokeToolToken).toHaveBeenCalledWith(8, "relay_123", "relay");
+    expect(usageService.audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "tool.relay_token.revoked",
+        targetId: "relay_123"
+      })
+    );
     await app.close();
   });
 

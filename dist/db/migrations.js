@@ -43,6 +43,7 @@ const statements = [
     `CREATE TABLE IF NOT EXISTS tool_tokens (
     id TEXT PRIMARY KEY,
     tool_id BIGINT NOT NULL REFERENCES tools(id),
+    scope TEXT NOT NULL DEFAULT 'proxy',
     token_hash TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active',
     expires_at TIMESTAMPTZ NOT NULL,
@@ -91,6 +92,11 @@ const statements = [
     `CREATE INDEX IF NOT EXISTS idx_usage_events_project_created_at ON usage_events(project_id, created_at DESC);`,
     `CREATE INDEX IF NOT EXISTS idx_sessions_subject_scope_expires ON sessions(subject_email, scope, expires_at);`,
     `CREATE INDEX IF NOT EXISTS idx_tool_tokens_tool_status_expires ON tool_tokens(tool_id, status, expires_at);`,
+    `ALTER TABLE tool_tokens ADD COLUMN IF NOT EXISTS scope TEXT;`,
+    `UPDATE tool_tokens SET scope = 'proxy' WHERE scope IS NULL;`,
+    `ALTER TABLE tool_tokens ALTER COLUMN scope SET DEFAULT 'proxy';`,
+    `ALTER TABLE tool_tokens ALTER COLUMN scope SET NOT NULL;`,
+    `CREATE INDEX IF NOT EXISTS idx_tool_tokens_tool_scope_status_expires ON tool_tokens(tool_id, scope, status, expires_at);`,
     `ALTER TABLE admins ADD COLUMN IF NOT EXISTS password_hash TEXT;`
 ];
 export async function runMigrations(pool) {
