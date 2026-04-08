@@ -405,17 +405,21 @@ function dashboardPageHtml(email, errorKey) {
               <div id="copyRelayTokenMessage" class="small mt-1"></div>
             </div>
           </div>
-          <div class="col-lg-3">
-            <h2 class="h6">Token list</h2>
+        </div>
+        <div class="row g-3 mt-1">
+          <div class="col-12">
             <div class="ghost-panel">
-              <div class="small text-muted mb-2">Select a tool and token type to view tokens.</div>
-              <div class="d-flex align-items-center gap-2 mb-2">
+              <div class="section-header mb-2">
+                <h2 class="h5 mb-0">Token list</h2>
+                <div class="small text-muted">Select a tool and token type to view tokens.</div>
+              </div>
+              <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                 <div class="small fw-semibold">Tool:</div>
                 <div id="tokenListToolLabel" class="small">None selected</div>
                 <span id="tokenListScopeBadge" class="badge text-bg-info" hidden></span>
-                <span id="tokenListToolIdBadge" class="badge text-bg-secondary ms-auto" hidden></span>
+                <span id="tokenListToolIdBadge" class="badge text-bg-secondary ms-sm-auto" hidden></span>
               </div>
-              <div id="tokenListMessage" class="alert py-2 mb-2" hidden></div>
+              <div id="tokenListMessage" class="alert py-2 mb-3" hidden></div>
               <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
                   <thead>
