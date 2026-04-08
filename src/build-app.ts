@@ -14,6 +14,10 @@ export function isOriginAllowed(origin: string | undefined, allowedOrigins: stri
     return true;
   }
 
+  if (origin === "null") {
+    return true;
+  }
+
   return allowedOrigins.length === 0 || allowedOrigins.includes("*") || allowedOrigins.includes(origin);
 }
 
@@ -39,7 +43,9 @@ export async function buildBaseApp(env: AppEnv) {
     origin: (origin, cb) => {
       cb(null, isOriginAllowed(origin, env.corsAllowedOrigins));
     },
-    credentials: true
+    credentials: true,
+    methods: ["GET", "HEAD", "POST", "OPTIONS"],
+    allowedHeaders: ["Authorization", "Content-Type"]
   });
 
   const pool = createPool(env);

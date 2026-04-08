@@ -370,9 +370,9 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
             </form>
             <div id="toolCreateMessage" class="alert py-2 mt-2 mb-0" hidden></div>
           </div>
-          <div class="col-lg-4">
-            <h2 class="h6">Mint tool token</h2>
-            <form id="mintTokenForm" class="row g-2">
+          <div class="col-lg-3">
+            <h2 class="h6">Mint proxy token</h2>
+            <form id="mintProxyTokenForm" class="row g-2">
               <div class="col-12">
                 <input name="toolId" type="number" min="1" class="form-control form-control-sm" placeholder="tool id" required />
               </div>
@@ -380,35 +380,60 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
                 <button type="submit" class="btn btn-outline-primary btn-sm">Mint token</button>
               </div>
             </form>
-            <div id="tokenMintMessage" class="alert py-2 mt-2 mb-0" hidden></div>
-            <div id="mintedTokenPanel" class="alert alert-warning mt-2 mb-0" hidden>
-              <div class="small fw-semibold mb-1">Store this token now (it will not be shown again):</div>
-              <code id="mintedTokenValue" class="small d-block text-break"></code>
-              <div class="small mt-1">Expires: <span id="mintedTokenExpiry"></span></div>
+            <div id="proxyTokenMintMessage" class="alert py-2 mt-2 mb-0" hidden></div>
+            <div id="mintedProxyTokenPanel" class="alert alert-warning mt-2 mb-0" hidden>
+              <div class="small fw-semibold mb-1">Store this proxy token now (it will not be shown again):</div>
+              <code id="mintedProxyTokenValue" class="small d-block text-break"></code>
+              <div class="small mt-1">Expires: <span id="mintedProxyTokenExpiry"></span></div>
+              <button id="copyMintedProxyTokenBtn" type="button" class="btn btn-sm btn-outline-light mt-2">Copy token</button>
+              <div id="copyProxyTokenMessage" class="small mt-1"></div>
+            </div>
+          </div>
+          <div class="col-lg-3">
+            <h2 class="h6">Mint relay token</h2>
+            <form id="mintRelayTokenForm" class="row g-2">
+              <div class="col-12">
+                <input name="toolId" type="number" min="1" class="form-control form-control-sm" placeholder="tool id" required />
+              </div>
+              <div class="col-12">
+                <button type="submit" class="btn btn-outline-primary btn-sm">Mint token</button>
+              </div>
+            </form>
+            <div id="relayTokenMintMessage" class="alert py-2 mt-2 mb-0" hidden></div>
+            <div id="mintedRelayTokenPanel" class="alert alert-warning mt-2 mb-0" hidden>
+              <div class="small fw-semibold mb-1">Store this relay token now (it will not be shown again):</div>
+              <code id="mintedRelayTokenValue" class="small d-block text-break"></code>
+              <div class="small mt-1">Expires: <span id="mintedRelayTokenExpiry"></span></div>
               <div id="mintedRelayUrlGroup" class="mt-2" hidden>
                 <div class="small fw-semibold mb-1">Relay responses URL</div>
                 <code id="mintedRelayUrlValue" class="small d-block text-break"></code>
                 <button id="copyMintedRelayUrlBtn" type="button" class="btn btn-sm btn-outline-light mt-2">Copy relay URL</button>
                 <div id="copyRelayUrlMessage" class="small mt-1"></div>
               </div>
-              <button id="copyMintedTokenBtn" type="button" class="btn btn-sm btn-outline-light mt-2">Copy token</button>
-              <div id="copyTokenMessage" class="small mt-1"></div>
+              <button id="copyMintedRelayTokenBtn" type="button" class="btn btn-sm btn-outline-light mt-2">Copy token</button>
+              <div id="copyRelayTokenMessage" class="small mt-1"></div>
             </div>
           </div>
-          <div class="col-lg-4">
-            <h2 class="h6">Token list</h2>
+        </div>
+        <div class="row g-3 mt-1">
+          <div class="col-12">
             <div class="ghost-panel">
-              <div class="small text-muted mb-2">Select a tool to view tokens.</div>
-              <div class="d-flex align-items-center gap-2 mb-2">
+              <div class="section-header mb-2">
+                <h2 class="h5 mb-0">Token list</h2>
+                <div class="small text-muted">Select a tool and token type to view tokens.</div>
+              </div>
+              <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                 <div class="small fw-semibold">Tool:</div>
                 <div id="tokenListToolLabel" class="small">None selected</div>
-                <span id="tokenListToolIdBadge" class="badge text-bg-secondary ms-auto" hidden></span>
+                <span id="tokenListScopeBadge" class="badge text-bg-info" hidden></span>
+                <span id="tokenListToolIdBadge" class="badge text-bg-secondary ms-sm-auto" hidden></span>
               </div>
-              <div id="tokenListMessage" class="alert py-2 mb-2" hidden></div>
+              <div id="tokenListMessage" class="alert py-2 mb-3" hidden></div>
               <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
                   <thead>
                     <tr>
+                      <th>Type</th>
                       <th>Token ID</th>
                       <th>Status</th>
                       <th>Expires</th>
@@ -418,7 +443,7 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
                     </tr>
                   </thead>
                   <tbody id="tokenRows">
-                    <tr><td colspan="6" class="text-muted">No tool selected.</td></tr>
+                    <tr><td colspan="7" class="text-muted">No tool selected.</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -526,7 +551,8 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
                   <div class="small text-muted">Tool operations</div>
                   <ul class="small mb-0">
                     <li>Create tools under an existing project.</li>
-                    <li><strong>Tokens</strong> loads token summaries for the tool.</li>
+                    <li><strong>Proxy tokens</strong> loads server-token summaries for the tool.</li>
+                    <li><strong>Relay tokens</strong> loads distributed-client token summaries for the tool.</li>
                     <li><strong>Delete</strong> deactivates the tool and revokes its tokens.</li>
                     <li>Toggle <strong>Show inactive</strong> to include deactivated tools.</li>
                   </ul>
@@ -536,9 +562,9 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
                 <div class="ghost-panel h-100">
                   <div class="small text-muted">Token list</div>
                   <ul class="small mb-0">
-                    <li>Mint a token for a tool and store it immediately.</li>
+                    <li>Mint proxy tokens for server tools and relay tokens for distributed tools.</li>
                     <li>Use the token list to revoke tokens without pasting secrets.</li>
-                    <li>Token IDs and status are visible; raw tokens are not.</li>
+                    <li>Token type, ID, and status are visible; raw tokens are not.</li>
                   </ul>
                 </div>
               </div>
@@ -569,6 +595,7 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
     var usageRows = document.getElementById("usageRows");
     var tokenRows = document.getElementById("tokenRows");
     var tokenListToolLabel = document.getElementById("tokenListToolLabel");
+    var tokenListScopeBadge = document.getElementById("tokenListScopeBadge");
     var tokenListToolIdBadge = document.getElementById("tokenListToolIdBadge");
     var tokenListMessage = document.getElementById("tokenListMessage");
     var projectsIncludeInactive = document.getElementById("projectsIncludeInactive");
@@ -578,11 +605,17 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
     var helpCloseBtn = document.getElementById("helpCloseBtn");
     var helpCloseFooterBtn = document.getElementById("helpCloseFooterBtn");
     var activeTokenToolId = null;
-    var mintedTokenPanel = document.getElementById("mintedTokenPanel");
-    var mintedTokenValue = document.getElementById("mintedTokenValue");
-    var mintedTokenExpiry = document.getElementById("mintedTokenExpiry");
-    var copyTokenMessage = document.getElementById("copyTokenMessage");
-    var copyMintedTokenBtn = document.getElementById("copyMintedTokenBtn");
+    var activeTokenScope = null;
+    var mintedProxyTokenPanel = document.getElementById("mintedProxyTokenPanel");
+    var mintedProxyTokenValue = document.getElementById("mintedProxyTokenValue");
+    var mintedProxyTokenExpiry = document.getElementById("mintedProxyTokenExpiry");
+    var copyProxyTokenMessage = document.getElementById("copyProxyTokenMessage");
+    var copyMintedProxyTokenBtn = document.getElementById("copyMintedProxyTokenBtn");
+    var mintedRelayTokenPanel = document.getElementById("mintedRelayTokenPanel");
+    var mintedRelayTokenValue = document.getElementById("mintedRelayTokenValue");
+    var mintedRelayTokenExpiry = document.getElementById("mintedRelayTokenExpiry");
+    var copyRelayTokenMessage = document.getElementById("copyRelayTokenMessage");
+    var copyMintedRelayTokenBtn = document.getElementById("copyMintedRelayTokenBtn");
     var mintedRelayUrlGroup = document.getElementById("mintedRelayUrlGroup");
     var mintedRelayUrlValue = document.getElementById("mintedRelayUrlValue");
     var copyMintedRelayUrlBtn = document.getElementById("copyMintedRelayUrlBtn");
@@ -668,9 +701,34 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
       return '<span class="badge text-bg-secondary">' + esc(status || "-") + "</span>";
     }
 
+    function tokenScopeLabel(scope) {
+      return scope === "relay" ? "relay" : "proxy";
+    }
+
+    function tokenScopeBadge(scope) {
+      return '<span class="badge text-bg-info">' + esc(tokenScopeLabel(scope)) + "</span>";
+    }
+
     function setTokenListEmpty(message) {
       if (!tokenRows) return;
-      tokenRows.innerHTML = '<tr><td colspan="6" class="text-muted">' + esc(message) + "</td></tr>";
+      tokenRows.innerHTML = '<tr><td colspan="7" class="text-muted">' + esc(message) + "</td></tr>";
+    }
+
+    function tokenListUrl(toolId, scope) {
+      return scope === "relay"
+        ? "/admin/tools/" + toolId + "/relay-tokens"
+        : "/admin/tools/" + toolId + "/tokens";
+    }
+
+    function tokenRevokeUrl(toolId, tokenId, scope) {
+      return scope === "relay"
+        ? "/admin/tools/" + toolId + "/relay-tokens/" + encodeURIComponent(tokenId) + "/revoke"
+        : "/admin/tools/" + toolId + "/tokens/" + encodeURIComponent(tokenId);
+    }
+
+    function clearMintedTokenPanels() {
+      if (mintedProxyTokenPanel) mintedProxyTokenPanel.hidden = true;
+      if (mintedRelayTokenPanel) mintedRelayTokenPanel.hidden = true;
     }
 
     function renderProjects(projects) {
@@ -712,7 +770,8 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
             : "-";
           var actions = tool.status === "active"
             ? '<div class="d-flex gap-2">' +
-              '<button type="button" class="btn btn-sm btn-outline-secondary" data-action="view-tokens" data-tool-id="' + esc(tool.id) + '" data-tool-slug="' + esc(tool.slug) + '">Tokens</button>' +
+              '<button type="button" class="btn btn-sm btn-outline-secondary" data-action="view-proxy-tokens" data-tool-id="' + esc(tool.id) + '" data-tool-slug="' + esc(tool.slug) + '">Proxy tokens</button>' +
+              '<button type="button" class="btn btn-sm btn-outline-secondary" data-action="view-relay-tokens" data-tool-id="' + esc(tool.id) + '" data-tool-slug="' + esc(tool.slug) + '">Relay tokens</button>' +
               '<button type="button" class="btn btn-sm btn-outline-danger" data-action="delete-tool" data-tool-id="' + esc(tool.id) + '">Delete</button>' +
             "</div>"
             : '<span class="text-muted small">Inactive</span>';
@@ -732,7 +791,7 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
     function renderTokenList(tokens) {
       if (!tokenRows) return;
       if (!tokens.length) {
-        setTokenListEmpty("No tokens found for this tool.");
+        setTokenListEmpty("No " + tokenScopeLabel(activeTokenScope) + " tokens found for this tool.");
         return;
       }
       tokenRows.innerHTML = tokens
@@ -741,6 +800,7 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
             ? '<button type="button" class="btn btn-sm btn-outline-danger" data-action="delete-token" data-token-id="' + esc(token.id) + '">Revoke</button>'
             : '<span class="text-muted small">Revoked</span>';
           return "<tr>" +
+            "<td>" + tokenScopeBadge(token.scope) + "</td>" +
             "<td><code class=\\"small\\">" + esc(token.id) + "</code></td>" +
             "<td>" + statusBadge(token.status) + "</td>" +
             "<td class=\\"text-nowrap\\">" + esc(formatDate(token.expiresAt)) + "</td>" +
@@ -833,21 +893,26 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
       renderUsage(Array.isArray(data.usage) ? data.usage : []);
     }
 
-    async function loadTokensForTool(toolId, toolSlug) {
+    async function loadTokensForTool(toolId, toolSlug, scope) {
       if (tokenListMessage) tokenListMessage.hidden = true;
       activeTokenToolId = toolId;
+      activeTokenScope = scope;
       if (tokenListToolLabel) tokenListToolLabel.textContent = toolSlug ? toolSlug : "Tool " + toolId;
+      if (tokenListScopeBadge) {
+        tokenListScopeBadge.textContent = tokenScopeLabel(scope);
+        tokenListScopeBadge.hidden = false;
+      }
       if (tokenListToolIdBadge) {
         tokenListToolIdBadge.textContent = "ID " + toolId;
         tokenListToolIdBadge.hidden = false;
       }
-      setTokenListEmpty("Loading tokens...");
+      setTokenListEmpty("Loading " + tokenScopeLabel(scope) + " tokens...");
       try {
-        var data = await requestJson("/admin/tools/" + toolId + "/tokens");
+        var data = await requestJson(tokenListUrl(toolId, scope));
         renderTokenList(Array.isArray(data.tokens) ? data.tokens : []);
       } catch (error) {
         setInlineMessage(tokenListMessage, "danger", error instanceof Error ? error.message : "Failed to load tokens.");
-        setTokenListEmpty("Unable to load tokens.");
+        setTokenListEmpty("Unable to load " + tokenScopeLabel(scope) + " tokens.");
       }
     }
 
@@ -976,17 +1041,17 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
       });
     }
 
-    var mintTokenForm = document.getElementById("mintTokenForm");
-    if (mintTokenForm) {
-      mintTokenForm.addEventListener("submit", async function (event) {
+    var mintProxyTokenForm = document.getElementById("mintProxyTokenForm");
+    if (mintProxyTokenForm) {
+      mintProxyTokenForm.addEventListener("submit", async function (event) {
         event.preventDefault();
-        clearMessage("tokenMintMessage");
-        if (mintedTokenPanel) mintedTokenPanel.hidden = true;
+        clearMessage("proxyTokenMintMessage");
+        clearMintedTokenPanels();
 
-        var formData = new FormData(mintTokenForm);
+        var formData = new FormData(mintProxyTokenForm);
         var toolId = toInt(formData.get("toolId"));
         if (!toolId) {
-          setMessage("tokenMintMessage", "danger", "Tool id must be a positive integer.");
+          setMessage("proxyTokenMintMessage", "danger", "Tool id must be a positive integer.");
           return;
         }
 
@@ -994,11 +1059,46 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
           var data = await requestJson("/admin/tools/" + toolId + "/tokens", {
             method: "POST"
           });
-          setMessage("tokenMintMessage", "success", "Tool token minted.");
-          if (mintedTokenPanel && mintedTokenValue && mintedTokenExpiry) {
-            mintedTokenValue.textContent = String(data.token || "");
-            mintedTokenExpiry.textContent = formatDate(data.expiresAt);
-            mintedTokenPanel.hidden = false;
+          setMessage("proxyTokenMintMessage", "success", "Proxy token minted.");
+          if (mintedProxyTokenPanel && mintedProxyTokenValue && mintedProxyTokenExpiry) {
+            mintedProxyTokenValue.textContent = String(data.token || "");
+            mintedProxyTokenExpiry.textContent = formatDate(data.expiresAt);
+            mintedProxyTokenPanel.hidden = false;
+          }
+          if (copyProxyTokenMessage) copyProxyTokenMessage.textContent = "";
+          if (activeTokenToolId === toolId && activeTokenScope === "proxy") {
+            loadTokensForTool(toolId, null, "proxy").catch(function () {});
+          }
+          mintProxyTokenForm.reset();
+        } catch (error) {
+          setMessage("proxyTokenMintMessage", "danger", error instanceof Error ? error.message : "Failed to mint token.");
+        }
+      });
+    }
+
+    var mintRelayTokenForm = document.getElementById("mintRelayTokenForm");
+    if (mintRelayTokenForm) {
+      mintRelayTokenForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        clearMessage("relayTokenMintMessage");
+        clearMintedTokenPanels();
+
+        var formData = new FormData(mintRelayTokenForm);
+        var toolId = toInt(formData.get("toolId"));
+        if (!toolId) {
+          setMessage("relayTokenMintMessage", "danger", "Tool id must be a positive integer.");
+          return;
+        }
+
+        try {
+          var data = await requestJson("/admin/tools/" + toolId + "/relay-tokens", {
+            method: "POST"
+          });
+          setMessage("relayTokenMintMessage", "success", "Relay token minted.");
+          if (mintedRelayTokenPanel && mintedRelayTokenValue && mintedRelayTokenExpiry) {
+            mintedRelayTokenValue.textContent = String(data.token || "");
+            mintedRelayTokenExpiry.textContent = formatDate(data.expiresAt);
+            mintedRelayTokenPanel.hidden = false;
           }
           if (mintedRelayUrlGroup && mintedRelayUrlValue && copyRelayUrlMessage) {
             var relayUrl = String(data.relayResponsesUrl || "");
@@ -1006,29 +1106,47 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
             mintedRelayUrlGroup.hidden = !relayUrl;
             copyRelayUrlMessage.textContent = "";
           }
-          if (activeTokenToolId === toolId) {
-            loadTokensForTool(toolId, null).catch(function () {});
+          if (copyRelayTokenMessage) copyRelayTokenMessage.textContent = "";
+          if (activeTokenToolId === toolId && activeTokenScope === "relay") {
+            loadTokensForTool(toolId, null, "relay").catch(function () {});
           }
-          mintTokenForm.reset();
+          mintRelayTokenForm.reset();
         } catch (error) {
-          setMessage("tokenMintMessage", "danger", error instanceof Error ? error.message : "Failed to mint token.");
+          setMessage("relayTokenMintMessage", "danger", error instanceof Error ? error.message : "Failed to mint token.");
         }
       });
     }
 
-    if (copyMintedTokenBtn) {
-      copyMintedTokenBtn.addEventListener("click", async function () {
-        if (!mintedTokenValue || !copyTokenMessage) return;
-        var token = String(mintedTokenValue.textContent || "");
+    if (copyMintedProxyTokenBtn) {
+      copyMintedProxyTokenBtn.addEventListener("click", async function () {
+        if (!mintedProxyTokenValue || !copyProxyTokenMessage) return;
+        var token = String(mintedProxyTokenValue.textContent || "");
         if (!token) {
-          copyTokenMessage.textContent = "No token to copy.";
+          copyProxyTokenMessage.textContent = "No token to copy.";
           return;
         }
         try {
           await navigator.clipboard.writeText(token);
-          copyTokenMessage.textContent = "Token copied.";
+          copyProxyTokenMessage.textContent = "Token copied.";
         } catch (_error) {
-          copyTokenMessage.textContent = "Clipboard copy failed. Copy manually.";
+          copyProxyTokenMessage.textContent = "Clipboard copy failed. Copy manually.";
+        }
+      });
+    }
+
+    if (copyMintedRelayTokenBtn) {
+      copyMintedRelayTokenBtn.addEventListener("click", async function () {
+        if (!mintedRelayTokenValue || !copyRelayTokenMessage) return;
+        var token = String(mintedRelayTokenValue.textContent || "");
+        if (!token) {
+          copyRelayTokenMessage.textContent = "No token to copy.";
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(token);
+          copyRelayTokenMessage.textContent = "Token copied.";
+        } catch (_error) {
+          copyRelayTokenMessage.textContent = "Clipboard copy failed. Copy manually.";
         }
       });
     }
@@ -1067,10 +1185,12 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
           await loadProjects();
           await loadTools();
           if (activeTokenToolId) {
-            setTokenListEmpty("Select a tool to view tokens.");
+            setTokenListEmpty("Select a tool and token type to view tokens.");
             if (tokenListToolLabel) tokenListToolLabel.textContent = "None selected";
+            if (tokenListScopeBadge) tokenListScopeBadge.hidden = true;
             if (tokenListToolIdBadge) tokenListToolIdBadge.hidden = true;
             activeTokenToolId = null;
+            activeTokenScope = null;
           }
         } catch (error) {
           setMessage("projectCreateMessage", "danger", error instanceof Error ? error.message : "Failed to delete project.");
@@ -1083,11 +1203,12 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
         var target = event.target;
         if (!target || !("dataset" in target)) return;
         var action = target.dataset.action;
-        if (action === "view-tokens") {
+        if (action === "view-proxy-tokens" || action === "view-relay-tokens") {
           var toolId = toInt(target.dataset.toolId);
           if (!toolId) return;
           var toolSlug = target.dataset.toolSlug || "";
-          loadTokensForTool(toolId, toolSlug).catch(function () {});
+          var scope = action === "view-relay-tokens" ? "relay" : "proxy";
+          loadTokensForTool(toolId, toolSlug, scope).catch(function () {});
           return;
         }
         if (action === "delete-tool") {
@@ -1101,10 +1222,12 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
             await requestJson("/admin/tools/" + deleteToolId, { method: "DELETE" });
             await loadTools();
             if (activeTokenToolId === deleteToolId) {
-              setTokenListEmpty("Select a tool to view tokens.");
+              setTokenListEmpty("Select a tool and token type to view tokens.");
               if (tokenListToolLabel) tokenListToolLabel.textContent = "None selected";
+              if (tokenListScopeBadge) tokenListScopeBadge.hidden = true;
               if (tokenListToolIdBadge) tokenListToolIdBadge.hidden = true;
               activeTokenToolId = null;
+              activeTokenScope = null;
             }
           } catch (error) {
             setMessage("toolCreateMessage", "danger", error instanceof Error ? error.message : "Failed to delete tool.");
@@ -1120,14 +1243,14 @@ function dashboardPageHtml(email: string, errorKey?: string): string {
         var action = target.dataset.action;
         if (action !== "delete-token") return;
         var tokenId = target.dataset.tokenId || "";
-        if (!tokenId || !activeTokenToolId) return;
+        if (!tokenId || !activeTokenToolId || !activeTokenScope) return;
         var confirmed = window.confirm("Revoke token " + tokenId + "?");
         if (!confirmed) return;
         try {
-          await requestJson("/admin/tools/" + activeTokenToolId + "/tokens/" + encodeURIComponent(tokenId), {
-            method: "DELETE"
+          await requestJson(tokenRevokeUrl(activeTokenToolId, tokenId, activeTokenScope), {
+            method: activeTokenScope === "relay" ? "POST" : "DELETE"
           });
-          await loadTokensForTool(activeTokenToolId, null);
+          await loadTokensForTool(activeTokenToolId, null, activeTokenScope);
         } catch (error) {
           setInlineMessage(tokenListMessage, "danger", error instanceof Error ? error.message : "Failed to revoke token.");
         }

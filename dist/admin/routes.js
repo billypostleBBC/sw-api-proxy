@@ -167,7 +167,8 @@ export function registerAdminRoutes(app, deps) {
             tokenId: generated.tokenId,
             tokenHash: generated.tokenHash,
             toolId,
-            expiresAt
+            expiresAt,
+            scope: "proxy"
         });
         await deps.usageService.audit({
             actorEmail,
@@ -176,6 +177,42 @@ export function registerAdminRoutes(app, deps) {
             targetType: "tool_token",
             targetId: generated.tokenId,
             metadata: { toolId, expiresAt: expiresAt.toISOString() }
+        });
+        return reply.code(201).send({
+            token: generated.token,
+            expiresAt: expiresAt.toISOString(),
+            ...relayResponseForTool(app.env.relayPublicBaseUrl, tool)
+        });
+    });
+    app.post("/admin/tools/:toolId/relay-tokens", async (request, reply) => {
+        const actorEmail = await requireAdmin(app, request, deps.authService);
+        if (!actorEmail) {
+            return sendError(reply, 401, "unauthorized", "Admin session required");
+        }
+        const toolId = Number(request.params.toolId);
+        if (!Number.isFinite(toolId) || toolId < 1) {
+            return sendError(reply, 400, "bad_request", "Invalid tool id");
+        }
+        const tool = await deps.repo.getToolById(toolId);
+        if (!tool) {
+            return sendError(reply, 404, "not_found", "Tool not found");
+        }
+        const generated = AuthService.makeRelayToken();
+        const expiresAt = new Date(Date.now() + app.env.toolTokenTtlDays * 24 * 60 * 60_000);
+        await deps.repo.createToolToken({
+            tokenId: generated.tokenId,
+            tokenHash: generated.tokenHash,
+            toolId,
+            expiresAt,
+            scope: "relay"
+        });
+        await deps.usageService.audit({
+            actorEmail,
+            actorScope: "admin",
+            action: "tool.relay_token.created",
+            targetType: "tool_token",
+            targetId: generated.tokenId,
+            metadata: { toolId, expiresAt: expiresAt.toISOString(), scope: "relay" }
         });
         return reply.code(201).send({
             token: generated.token,
@@ -193,7 +230,7 @@ export function registerAdminRoutes(app, deps) {
         if (!Number.isFinite(toolId) || toolId < 1) {
             return sendError(reply, 400, "bad_request", "Invalid tool id");
         }
-        const revoked = await deps.repo.revokeToolToken(toolId, tokenId);
+        const revoked = await deps.repo.revokeToolToken(toolId, tokenId, "proxy");
         if (!revoked) {
             return sendError(reply, 404, "not_found", "Tool token not found");
         }
@@ -207,6 +244,30 @@ export function registerAdminRoutes(app, deps) {
         });
         return reply.send({ ok: true });
     });
+    app.post("/admin/tools/:toolId/relay-tokens/:tokenId/revoke", async (request, reply) => {
+        const actorEmail = await requireAdmin(app, request, deps.authService);
+        if (!actorEmail) {
+            return sendError(reply, 401, "unauthorized", "Admin session required");
+        }
+        const { toolId: toolIdRaw, tokenId } = request.params;
+        const toolId = Number(toolIdRaw);
+        if (!Number.isFinite(toolId) || toolId < 1) {
+            return sendError(reply, 400, "bad_request", "Invalid tool id");
+        }
+        const revoked = await deps.repo.revokeToolToken(toolId, tokenId, "relay");
+        if (!revoked) {
+            return sendError(reply, 404, "not_found", "Relay token not found");
+        }
+        await deps.usageService.audit({
+            actorEmail,
+            actorScope: "admin",
+            action: "tool.relay_token.revoked",
+            targetType: "tool_token",
+            targetId: tokenId,
+            metadata: { toolId, scope: "relay" }
+        });
+        return reply.send({ ok: true });
+    });
     app.delete("/admin/tools/:toolId/tokens/:tokenId", async (request, reply) => {
         const actorEmail = await requireAdmin(app, request, deps.authService);
         if (!actorEmail) {
@@ -217,7 +278,7 @@ export function registerAdminRoutes(app, deps) {
         if (!Number.isFinite(toolId) || toolId < 1) {
             return sendError(reply, 400, "bad_request", "Invalid tool id");
         }
-        const revoked = await deps.repo.revokeToolToken(toolId, tokenId);
+        const revoked = await deps.repo.revokeToolToken(toolId, tokenId, "proxy");
         if (!revoked) {
             return sendError(reply, 404, "not_found", "Tool token not found");
         }
@@ -280,7 +341,23 @@ export function registerAdminRoutes(app, deps) {
         if (!tool) {
             return sendError(reply, 404, "not_found", "Tool not found");
         }
-        const tokens = await deps.repo.listToolTokens(toolId);
+        const tokens = await deps.repo.listToolTokens(toolId, "proxy");
+        return reply.send({ tokens });
+    });
+    app.get("/admin/tools/:toolId/relay-tokens", async (request, reply) => {
+        const actorEmail = await requireAdmin(app, request, deps.authService);
+        if (!actorEmail) {
+            return sendError(reply, 401, "unauthorized", "Admin session required");
+        }
+        const toolId = Number(request.params.toolId);
+        if (!Number.isFinite(toolId) || toolId < 1) {
+            return sendError(reply, 400, "bad_request", "Invalid tool id");
+        }
+        const tool = await deps.repo.getToolById(toolId);
+        if (!tool) {
+            return sendError(reply, 404, "not_found", "Tool not found");
+        }
+        const tokens = await deps.repo.listToolTokens(toolId, "relay");
         return reply.send({ tokens });
     });
     app.delete("/admin/tools/:toolId", async (request, reply) => {

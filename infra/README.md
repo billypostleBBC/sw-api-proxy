@@ -98,6 +98,29 @@ Cost note:
 1. The helper script may provision resources that increase fixed monthly cost (for example, NAT and KMS endpoint infra).
 2. Do not run it in production unless you actually need to recreate missing network resources.
 
+### 0b) Bootstrap a new AWS account
+Use this when you need to recreate the baseline stack in a fresh account instead of hand-building it:
+```bash
+ADMIN_EMAIL_ALLOWLIST="name@bbc.co.uk" \
+ADMIN_PASSWORD="<shared-admin-password>" \
+RELAY_PASSWORD="<shared-relay-password>" \
+PROXY_CORS_ALLOWED_ORIGINS="https://admin.example.com" \
+RELAY_CORS_ALLOWED_ORIGINS="*" \
+./infra/scripts/bootstrap-account.sh
+```
+
+What it creates:
+1. ECR repository for `proxy-api`.
+2. KMS key + `alias/proxy-api`.
+3. App Runner ECR access role and runtime instance role.
+4. Private subnets, NAT-backed route table, security groups, and App Runner VPC connector in the target VPC.
+5. RDS PostgreSQL instance and SSM parameters for runtime secrets.
+
+Optional deploy flags:
+1. Set `BUILD_AND_PUSH_IMAGE=1` to build and push the current repo image.
+2. Set `DEPLOY_SERVICES=1` to create or update `relay-api` and `proxy-api` after the image is available.
+3. Set `IMAGE_TAG=<immutable-tag>` if you want to deploy an existing ECR image instead of building one in the same run.
+
 ### 1) Build and push immutable image
 ```bash
 export AWS_REGION="eu-west-2"
@@ -167,8 +190,8 @@ aws apprunner update-service --cli-input-json file://infra/apprunner/relay.updat
 
 ### `relay-api`
 1. `GET /health` returns `200` and `{"ok":true}`.
-2. `POST /v1/auth/login` returns a session token for an allowed email + password.
-3. `POST /v1/tools/:toolSlug/responses` succeeds with a valid relay session and active tool.
+2. `POST /v1/tools/:toolSlug/responses` succeeds with a valid relay token and active tool.
+3. Legacy compatibility only: `POST /v1/auth/login` still returns a session token for older tools that have not migrated yet.
 4. `CORS_ALLOWED_ORIGINS="*"` allows any origin until you are ready to replace it with a comma-separated allowlist.
 
 ## Observability and rollback
@@ -184,7 +207,7 @@ Rollback:
 
 ## Notes
 1. `RELAY_PUBLIC_BASE_URL` is not secret; set it on `proxy-api` so admin responses can derive tool relay URLs.
-2. `relay-api` does not store tool bearer tokens. It resolves tools by slug against the shared database.
+2. `relay-api` validates relay bearer tokens against scoped entries in `tool_tokens` and still resolves legacy session traffic by tool slug.
 3. Production relay root is currently `https://5z97x9cmtm.eu-west-2.awsapprunner.com`.
 4. Production relay CORS is currently temporary wildcard `*`.
 5. Historical migration notes remain under `docs/archive/`.

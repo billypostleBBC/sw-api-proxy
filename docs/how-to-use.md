@@ -2,7 +2,7 @@
 
 This guide covers two tasks:
 1. Add or rotate an OpenAI API key for a project.
-2. Point server tools at the proxy and distributed clients at the shared relay so raw OpenAI keys and long-lived tool tokens stay server-side.
+2. Point server tools at the proxy and distributed clients at the shared relay so raw OpenAI keys stay server-side and each runtime gets the right token type.
 
 Model selection rule:
 1. SW API Proxy does not choose a model.
@@ -24,16 +24,16 @@ Use these when you need a narrower operational guide:
 5. Production runtime may store `ADMIN_PASSWORD_HASH`, but operators still sign in with the plaintext shared password.
 
 ```bash
-export BASE_URL="https://nnm7du2h7j.eu-west-2.awsapprunner.com"
+export BASE_URL="https://2rv5622zbp.eu-west-2.awsapprunner.com"
 export ADMIN_URL="$BASE_URL/admin"
 export PROXY_BASE_URL="$BASE_URL/proxy/v1"
-export RELAY_BASE_URL="https://relay.example.com"
+export RELAY_BASE_URL="https://jcarmqwi6v.eu-west-2.awsapprunner.com"
 export ADMIN_EMAIL="admin1@bbc.co.uk"
 export ADMIN_PASSWORD="<shared-admin-password>"
 export COOKIE_JAR="${TMPDIR:-/tmp}/proxy-api-admin.cookie"
 ```
 
-Current hosted admin dashboard: `https://nnm7du2h7j.eu-west-2.awsapprunner.com/admin`
+Current hosted admin dashboard: `https://2rv5622zbp.eu-west-2.awsapprunner.com/admin`
 
 ## Fastest Manual Path: Browser Admin To Smoke Test
 
@@ -51,8 +51,11 @@ Keep using this path while the admin UI is still being refined. It is the fastes
    - Create a tool if one does not already exist.
    - Use the tool ID shown in the tools table.
    - Copy the relay URL shown in the table if the tool is a distributed client.
-6. In `Mint tool token`:
+6. In `Mint proxy token`:
    - Enter the tool ID only for trusted server tools.
+   - Mint the token and copy it immediately. It is only shown once.
+7. In `Mint relay token`:
+   - Enter the tool ID for any distributed client.
    - Mint the token and copy it immediately. It is only shown once.
 7. Run the smoke test:
 
@@ -135,7 +138,7 @@ curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools" \
 Response when the shared relay URL is configured on the proxy service:
 
 ```json
-{"id":456,"relayResponsesUrl":"https://relay.example.com/v1/tools/storyworks-ai-assistant/responses"}
+{"id":456,"relayResponsesUrl":"https://jcarmqwi6v.eu-west-2.awsapprunner.com/v1/tools/storyworks-ai-assistant/responses"}
 ```
 
 If the tool already exists, look it up via the admin API:
@@ -148,24 +151,25 @@ curl -s -b "$COOKIE_JAR" "$BASE_URL/admin/tools?slug=storyworks-ai-assistant&pro
 
 ### Path A: Distributed client through shared relay
 
-Client users sign in once per day:
+Mint relay bearer token:
 
 ```bash
-export RELAY_PASSWORD="<shared-relay-password>"
+export TOOL_ID="456"
 
-curl -s -X POST "$RELAY_BASE_URL/v1/auth/login" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email":"person@bbc.com",
-    "password":"'"$RELAY_PASSWORD"'"
-  }'
+curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools/$TOOL_ID/relay-tokens"
+```
+
+Response includes a relay-scoped token and expiry:
+
+```json
+{"token":"rt.<id>.<secret>","expiresAt":"2026-05-01T10:00:00.000Z","relayResponsesUrl":"https://jcarmqwi6v.eu-west-2.awsapprunner.com/v1/tools/storyworks-ai-assistant/responses"}
 ```
 
 Call the tool-specific relay URL returned by admin:
 
 ```bash
 curl -s -X POST "$RELAY_BASE_URL/v1/tools/storyworks-ai-assistant/responses" \
-  -H "Authorization: Bearer <relay_session_token>" \
+  -H "Authorization: Bearer <relay_token>" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "<responses_model>",
@@ -256,11 +260,11 @@ Supported proxy endpoints in MVP:
    - Mint a new token (`POST /admin/tools/:toolId/tokens`).
    - Update the consuming tool secret.
    - Revoke old token.
-3. Rotate relay shared password:
-   - Update `RELAY_PASSWORD_HASH` on the `relay-api` App Runner service.
-   - Deploy the relay service.
-   - Verify `POST /v1/auth/login`.
-3. Revoke a token:
+3. Rotate relay token:
+   - Mint a new token (`POST /admin/tools/:toolId/relay-tokens`).
+   - Update the distributed client secret or runtime config.
+   - Revoke old relay token.
+4. Revoke a token:
 
 ```bash
 export OLD_TOOL_TOKEN="tt.<id>.<secret>"
@@ -276,4 +280,8 @@ curl -i -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools/$TOOL_ID/tokens/$TOKEN_I
 3. `403 token_cap_exceeded`: project daily cap reached.
 4. `429 rate_limit_exceeded`: project RPM cap reached.
 5. Browser or plugin CORS errors: missing origin in `CORS_ALLOWED_ORIGINS`.
-6. Relay login `401 Invalid relay credentials`: wrong shared relay password or non-BBC email.
+6. Relay `401 Missing or invalid bearer token`: wrong, expired, or revoked relay token.
+
+Legacy compatibility note:
+1. `POST /v1/auth/login` still exists temporarily for tools that have not moved over yet.
+2. New distributed-client onboarding should use relay tokens, not shared relay login.

@@ -77,6 +77,15 @@ export class AuthService {
     };
   }
 
+  static makeRelayToken(): { token: string; tokenId: string; tokenHash: string } {
+    const opaque = makeOpaqueToken("rt");
+    return {
+      token: opaque.token,
+      tokenId: opaque.id,
+      tokenHash: opaque.secretHash
+    };
+  }
+
   static keySuffix(apiKey: string): string {
     return apiKey.length <= 6 ? apiKey : apiKey.slice(-6);
   }

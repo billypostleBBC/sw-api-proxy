@@ -1,8 +1,10 @@
 # Proxy Key Provisioning Guide
 
-This guide covers creating, rotating, and storing project key material and tool tokens for trusted server-side tools.
+This guide covers creating, rotating, and storing project key material for both runtime paths:
+1. Proxy tokens for trusted server-side tools.
+2. Relay tokens for distributed clients.
 
-Distributed clients should use the shared relay URL exposed by `/admin/tools` and authenticate with `POST /v1/auth/login`. They do not need tool tokens.
+Distributed clients should use the shared relay URL exposed by `/admin/tools` and a relay token minted from `POST /admin/tools/:toolId/relay-tokens`. They should not use proxy tokens.
 
 Model selection rule:
 1. SW API Proxy does not choose a model.
@@ -10,13 +12,17 @@ Model selection rule:
 
 ## 1) What is being provisioned
 
-Two different credentials are involved for server tools:
+Server tools need:
 1. OpenAI project key on proxy via `POST /admin/projects/:projectId/keys`.
-2. Tool token for trusted server tool access via `POST /admin/tools/:toolId/tokens`.
+2. Proxy token for trusted server tool access via `POST /admin/tools/:toolId/tokens`.
+
+Distributed clients need:
+1. OpenAI project key on proxy via `POST /admin/projects/:projectId/keys`.
+2. Relay token for distributed relay access via `POST /admin/tools/:toolId/relay-tokens`.
 
 Important:
 1. Raw OpenAI key is encrypted via KMS by proxy and not returned.
-2. Tool token is returned once at mint time; store it immediately in a secret manager.
+2. Proxy and relay tokens are returned once at mint time; store them immediately in the right secret store.
 
 ## 2) Script-first flow (primary)
 
@@ -44,7 +50,7 @@ Step A: Admin auth
 scripts/admin-auth.sh "$BASE_URL" "$ADMIN_EMAIL" "$COOKIE_JAR"
 ```
 
-Step B: Bootstrap project, key, tool, token
+Step B: Bootstrap project, key, tool, proxy token
 
 ```bash
 scripts/onboard-server-tool.sh \
@@ -127,7 +133,7 @@ curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools" \
   }'
 ```
 
-Mint tool token:
+Mint proxy token:
 
 ```bash
 export TOOL_ID="456"
@@ -147,9 +153,24 @@ curl -s -X POST "$BASE_URL/proxy/v1/responses" \
   -d '{"model":"<responses_model>","input":"proxy smoke test"}'
 ```
 
+Distributed client relay-token mint:
+
+```bash
+curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools/$TOOL_ID/relay-tokens"
+```
+
+Relay smoke check:
+
+```bash
+curl -s -X POST "https://relay.example.com/v1/tools/<tool-slug>/responses" \
+  -H "Authorization: Bearer <relay_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"<responses_model>","input":"relay smoke test"}'
+```
+
 ## 4) SSM storage pattern
 
-Recommended parameter names:
+Recommended parameter names for server tools:
 1. `/<app-name>/<env>/OPENAI_BASE_URL`
 2. `/<app-name>/<env>/OPENAI_API_KEY`
 
@@ -173,11 +194,16 @@ aws ssm put-parameter \
   --value "$TOOL_TOKEN"
 ```
 
+Recommended parameter names for distributed clients or their controlled host:
+1. `/<app-name>/<env>/RELAY_BASE_URL`
+2. `/<app-name>/<env>/RELAY_RESPONSES_URL`
+3. `/<app-name>/<env>/RELAY_BEARER_TOKEN`
+
 ## 5) Rotation SOP
 
-Use this sequence:
-1. Mint new tool token.
-2. Deploy backend relay with new token.
+Proxy-token rotation sequence:
+1. Mint new proxy token.
+2. Deploy backend relay or server tool with new token.
 3. Run smoke verification against proxy.
 4. Revoke old token by token ID.
 
@@ -191,14 +217,30 @@ curl -i -b "$COOKIE_JAR" -X POST \
   "$BASE_URL/admin/tools/$TOOL_ID/tokens/$TOKEN_ID/revoke"
 ```
 
+Relay-token rotation sequence:
+1. Mint new relay token.
+2. Update the distributed client or its controlled host with the new token.
+3. Run relay smoke verification.
+4. Revoke old relay token by token ID.
+
+Relay revoke command:
+
+```bash
+export OLD_RELAY_TOKEN="rt.<id>.<secret>"
+export RELAY_TOKEN_ID="$(printf '%s' "$OLD_RELAY_TOKEN" | cut -d '.' -f2)"
+
+curl -i -b "$COOKIE_JAR" -X POST \
+  "$BASE_URL/admin/tools/$TOOL_ID/relay-tokens/$RELAY_TOKEN_ID/revoke"
+```
+
 ## 6) Common failures and fixes
 
-Error format from proxy is consistent:
+Error format from proxy/relay is consistent:
 1. `{ "error": "<code>", "message": "<text>", "details": { ... } }`
 
 Common responses:
 1. `401 unauthorized` + `Missing or invalid bearer token`
-   - Fix: verify token value, header format, token status/expiry.
+   - Fix: verify token value, header format, token scope, token status/expiry.
 2. `403 forbidden` + `No active API key for project`
    - Fix: set active project key via `/admin/projects/:projectId/keys`.
 3. `403 token_cap_exceeded`
@@ -207,6 +249,8 @@ Common responses:
    - Fix: lower request burst, increase project RPM cap, retry after 60s.
 5. `502 upstream_error`
    - Fix: inspect upstream status/details payload and model/request shape.
+6. `403 forbidden` + `Relay token does not match tool`
+   - Fix: use the relay token minted for that exact tool slug.
 
 ## 7) Audit trail notes
 
@@ -215,5 +259,7 @@ Operational visibility exists in:
    - `project.key.rotated`
    - `tool.token.created`
    - `tool.token.revoked`
+   - `tool.relay_token.created`
+   - `tool.relay_token.revoked`
 2. `usage_events` table for proxy calls (`/v1/models`, `/v1/responses`, `/v1/embeddings`).
 3. `GET /admin/usage` endpoint for aggregated usage retrieval by admin session.

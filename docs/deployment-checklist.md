@@ -62,8 +62,8 @@ For both:
 
 ### `relay-api`
 1. `GET /health` returns `200` and `{"ok":true}`.
-2. `POST /v1/auth/login` succeeds for an allowed email and the shared relay password.
-3. `POST /v1/tools/:toolSlug/responses` succeeds with a valid relay session token.
+2. `POST /v1/tools/:toolSlug/responses` succeeds with a valid relay token.
+3. Legacy compatibility only: `POST /v1/auth/login` still succeeds if you are supporting older distributed clients during migration.
 
 ## 6) Observability checks
 1. Review App Runner Logs tab for startup/runtime errors.

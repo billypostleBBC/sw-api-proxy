@@ -4,7 +4,7 @@ Use this runbook to onboard any tool to this codebase.
 
 There are now two supported runtime paths:
 1. Trusted server tools call the proxy directly with a tool bearer token.
-2. Distributed clients call the shared relay with a short-lived relay session.
+2. Distributed clients call the shared relay with a relay bearer token minted per tool.
 
 Model selection rule:
 1. The proxy and relay do not choose a model for the caller.
@@ -14,7 +14,7 @@ Model selection rule:
 
 Use the shared relay when:
 1. The tool is distributed to other people's machines.
-2. You do not want a long-lived tool token in the client bundle.
+2. You want one relay-scoped bearer token per tool instead of proxy credentials in the client.
 3. The tool only needs `responses`.
 
 Use the direct proxy path when:
@@ -29,7 +29,7 @@ Do not use the direct proxy path for plugins, browser apps, or desktop apps you 
 These values are needed only while creating or updating the project/tool in admin:
 
 ```bash
-export BASE_URL="https://nnm7du2h7j.eu-west-2.awsapprunner.com"
+export BASE_URL="https://2rv5622zbp.eu-west-2.awsapprunner.com"
 export ADMIN_URL="$BASE_URL/admin"
 export PROXY_BASE_URL="$BASE_URL/proxy/v1"
 export ADMIN_EMAIL="<your-allowlisted-admin-email>"
@@ -65,14 +65,12 @@ An agent must decide the runtime path first. The required credentials are differ
 Fetch or derive exactly these values:
 1. `RELAY_BASE_URL`
 2. `RELAY_RESPONSES_URL`
-3. `RELAY_PASSWORD`
-4. End-user email for login, for example `person@bbc.com`
-5. The OpenAI `model` value the caller will send on each request
+3. `RELAY_BEARER_TOKEN`
+4. The OpenAI `model` value the caller will send on each request
 
 Use them like this:
-1. Call `POST $RELAY_BASE_URL/v1/auth/login` with the user's email and the plaintext `RELAY_PASSWORD`.
-2. Read the returned session `token`.
-3. Call `POST $RELAY_RESPONSES_URL` with `Authorization: Bearer <token>`.
+1. Call `POST $RELAY_RESPONSES_URL` with `Authorization: Bearer $RELAY_BEARER_TOKEN`.
+2. Do not send admin credentials, relay password hashes, or raw OpenAI keys.
 
 ### Trusted server tool through the proxy
 
@@ -98,12 +96,32 @@ Do not use these in a consuming tool:
 1. `RELAY_PASSWORD_HASH`
 2. `ADMIN_PASSWORD_HASH`
 3. Raw project OpenAI keys in any distributed client
-4. Long-lived tool tokens in any distributed client
+4. Proxy tool tokens (`tt...`) in any distributed client
 
 Reason:
-1. `RELAY_PASSWORD_HASH` is only for `relay-api` to validate logins.
-2. A tool must send the plaintext relay password to `/v1/auth/login`; the hash is not accepted by the API.
-3. The proxy and relay store hashes server-side so callers do not need direct access to deployment secrets.
+1. `RELAY_PASSWORD_HASH` is only for temporary legacy login compatibility on `relay-api`.
+2. Distributed clients now authenticate with relay tokens, not shared relay passwords.
+3. The proxy and relay store only token hashes server-side so callers do not need deployment secrets.
+
+## Agent migration checklist for distributed tools
+
+Use this when moving an existing plugin, desktop app, browser app, or agent host from any older auth path to relay tokens.
+
+1. Remove any raw OpenAI key dependency from the shipped runtime.
+2. Remove any proxy tool token (`tt...`) from the shipped runtime.
+3. Stop using legacy relay login (`POST /v1/auth/login`) for new migrations.
+4. Mint a relay token for the tool from admin.
+5. Store exactly these runtime values in the consuming tool's secret store or operator-controlled config:
+   - `RELAY_BASE_URL`
+   - `RELAY_RESPONSES_URL`
+   - `RELAY_BEARER_TOKEN`
+6. Send `Authorization: Bearer $RELAY_BEARER_TOKEN` on every `POST $RELAY_RESPONSES_URL`.
+7. Keep model selection in the consuming tool. The relay does not pick a model for you.
+8. Run a live smoke test with the real tool slug before revoking any old credentials.
+9. Revoke only the superseded relay token, proxy token, or legacy credential after the new path passes.
+
+Agent implementation rule:
+1. If the runtime is distributed, the only supported steady-state auth primitive is a relay token plus the tool-specific relay URL.
 
 ## Where each runtime value comes from
 
@@ -112,18 +130,16 @@ Agents should treat this list as the source-of-truth mapping.
 1. `PROXY_BASE_URL`
    Source: derive from `BASE_URL` as `$BASE_URL/proxy/v1`.
 2. `RELAY_BASE_URL`
-   Source: environment-level relay host, currently `https://5z97x9cmtm.eu-west-2.awsapprunner.com` in production.
+   Source: environment-level relay host, currently `https://jcarmqwi6v.eu-west-2.awsapprunner.com` in production.
 3. `RELAY_RESPONSES_URL`
-   Source: returned by `POST /admin/tools` and `POST /admin/tools/:toolId/tokens`, or shown in the admin dashboard tools table.
+   Source: returned by `POST /admin/tools` and `POST /admin/tools/:toolId/relay-tokens`, or shown in the admin dashboard tools table.
    Fallback: derive as `$RELAY_BASE_URL/v1/tools/$TOOL_SLUG/responses` when the relay base and slug are known.
 4. `PROXY_BEARER_TOKEN`
    Source: returned once by `POST /admin/tools/:toolId/tokens`.
    Required handling: store it immediately in the consuming server's secret store; do not commit it or ship it to clients.
-5. `RELAY_PASSWORD`
-   Source: the shared plaintext relay password held by operators.
-   Important: this repo does not expose the plaintext relay password over any admin or relay API.
-   Important: `/relay-api/RELAY_PASSWORD_HASH` in AWS SSM is a deployment secret for `relay-api`, not a caller credential.
-   Required handling: copy the plaintext shared relay password into the consuming tool's own secret store.
+5. `RELAY_BEARER_TOKEN`
+   Source: returned once by `POST /admin/tools/:toolId/relay-tokens`.
+   Required handling: store it immediately in the consuming tool's secret store or runtime config; do not commit it.
 6. `ADMIN_EMAIL`
    Source: operator/admin credential for onboarding only.
 7. `ADMIN_PASSWORD`
@@ -137,17 +153,21 @@ This repo manages `proxy-api` and `relay-api`. It does not manage the secret nam
 
 For any new tool, store tool-side runtime values in that tool's own secret store, then fetch them at startup or deploy time. If the tool runs on AWS, use SSM Parameter Store or Secrets Manager under the tool's own namespace.
 
+Do not create or maintain tool-specific onboarding runbooks in this repo.
+1. Tool-specific archived runbooks go stale and reintroduce old auth patterns.
+2. Extend this generic runbook when requirements change instead.
+
 Recommended tool-side names:
 1. `PROXY_BASE_URL`
 2. `PROXY_BEARER_TOKEN`
 3. `RELAY_BASE_URL`
 4. `RELAY_RESPONSES_URL`
-5. `RELAY_PASSWORD`
+5. `RELAY_BEARER_TOKEN`
 
 Example AWS SSM fetch pattern for a server tool:
 
 ```bash
-export TOOL_SECRET_PREFIX="/storyworks-alt-text"
+export TOOL_SECRET_PREFIX="/<tool-slug>"
 
 export PROXY_BASE_URL="$(aws ssm get-parameter \
   --name "$TOOL_SECRET_PREFIX/PROXY_BASE_URL" \
@@ -164,7 +184,7 @@ export PROXY_BEARER_TOKEN="$(aws ssm get-parameter \
 Example AWS SSM fetch pattern for a distributed client backend or agent host:
 
 ```bash
-export TOOL_SECRET_PREFIX="/storyworks-alt-text"
+export TOOL_SECRET_PREFIX="/<tool-slug>"
 
 export RELAY_BASE_URL="$(aws ssm get-parameter \
   --name "$TOOL_SECRET_PREFIX/RELAY_BASE_URL" \
@@ -176,8 +196,8 @@ export RELAY_RESPONSES_URL="$(aws ssm get-parameter \
   --query 'Parameter.Value' \
   --output text)"
 
-export RELAY_PASSWORD="$(aws ssm get-parameter \
-  --name "$TOOL_SECRET_PREFIX/RELAY_PASSWORD" \
+export RELAY_BEARER_TOKEN="$(aws ssm get-parameter \
+  --name "$TOOL_SECRET_PREFIX/RELAY_BEARER_TOKEN" \
   --with-decryption \
   --query 'Parameter.Value' \
   --output text)"
@@ -194,16 +214,16 @@ Do not fetch these App Runner deployment parameters into a tool:
 The shared relay is already deployed in production.
 
 Use these production roots:
-1. Proxy/admin root: `https://nnm7du2h7j.eu-west-2.awsapprunner.com`
-2. Relay root: `https://5z97x9cmtm.eu-west-2.awsapprunner.com`
+1. Proxy/admin root: `https://2rv5622zbp.eu-west-2.awsapprunner.com`
+2. Relay root: `https://jcarmqwi6v.eu-west-2.awsapprunner.com`
 
 For new production tools:
 1. Do not deploy another relay service.
 2. Create the tool in admin.
 3. Use the derived relay URL from the admin response or dashboard.
 4. Treat that relay URL as a protected route, not as access by itself.
-5. Every distributed client must first sign in to `POST /v1/auth/login` and then send the returned bearer token to that relay URL.
-6. The derived URL format is `https://5z97x9cmtm.eu-west-2.awsapprunner.com/v1/tools/<tool-slug>/responses`.
+5. Mint a relay token for the tool and send it as bearer auth to that relay URL.
+6. The derived URL format is `https://jcarmqwi6v.eu-west-2.awsapprunner.com/v1/tools/<tool-slug>/responses`.
 
 ## Relay URL authentication dependency
 
@@ -211,24 +231,23 @@ This is the implementation detail people are missing:
 1. The derived relay URL is only a stable address for one tool.
 2. It is not a secret.
 3. It is not a token.
-4. It does not bypass login.
+4. It does not bypass bearer auth.
 
 Why this exists:
-1. Distributed clients run on other people's machines, so they cannot safely hold long-lived tool tokens.
-2. The relay replaces long-lived client credentials with a short-lived user session.
-3. That session is created only by `POST /v1/auth/login`.
-4. The relay route fails closed. If the bearer token is missing, invalid, or expired, the request is denied.
+1. Distributed clients run on other people's machines, so proxy tokens and raw OpenAI keys still do not belong there.
+2. Relay tokens are scoped to relay use only and do not work on `/proxy/*`.
+3. The relay route fails closed. If the bearer token is missing, invalid, revoked, or expired, the request is denied.
 
 What implementers must build:
-1. First call `POST /v1/auth/login` with the user's BBC email and the shared relay password.
-2. Store the returned session token in app memory or secure local storage for the session lifetime.
-3. Send `Authorization: Bearer <relay_session_token>` on every call to the tool's relay URL.
-4. When the relay returns `401 Missing or invalid bearer token`, send the user back through relay login and retry with a fresh token.
+1. Mint a relay token for the tool from the admin dashboard or `POST /admin/tools/:toolId/relay-tokens`.
+2. Store that relay token in the tool's secure runtime config.
+3. Send `Authorization: Bearer rt.<id>.<secret>` on every call to the tool's relay URL.
+4. When the relay returns `401 Missing or invalid bearer token`, rotate or re-copy the relay token and retry.
 
 What implementers must not assume:
 1. Copying the relay URL into a plugin, desktop app, browser app, or agent config does not make requests work.
-2. A tool token from `/admin/tools/:toolId/tokens` is not the right auth primitive for distributed clients.
-3. Admin auth and relay auth are separate. Logging into the admin dashboard does not create a relay session for client traffic.
+2. A proxy tool token from `/admin/tools/:toolId/tokens` is not the right auth primitive for distributed clients.
+3. Admin auth and relay auth are separate. Logging into the admin dashboard does not authenticate client traffic.
 4. `RELAY_PASSWORD_HASH` is not a client credential and should never be hard-coded into the tool.
 
 ## Environment-wide prerequisite: deploy the shared relay once
@@ -270,9 +289,9 @@ Use the admin dashboard when you want the smallest setup surface.
 4. Rotate the project OpenAI key.
 5. Create or find the tool.
 6. Copy the derived relay URL from the tools table if this is a distributed client.
-7. Also implement relay login in the client before the first call to that URL.
+7. Mint a relay token if this is a distributed client.
 8. Do not ship a distributed client that only knows the URL.
-9. Mint a tool token only if this is a trusted server tool.
+9. Mint a proxy token only if this is a trusted server tool.
 
 ## Script-first path
 
@@ -301,11 +320,11 @@ Outputs include:
 3. `tool_token`
 4. `token_expires_at`
 
-If you are onboarding a distributed client, you can ignore `tool_token`, but you still must implement relay login. The relay URL derived from `TOOL_SLUG` is only the destination path after authentication succeeds.
+If you are onboarding a distributed client, you can ignore `tool_token` and mint a relay token separately. The relay URL derived from `TOOL_SLUG` is only the destination path after authentication succeeds.
 
 After onboarding:
 1. For trusted server tools, store `PROXY_BASE_URL` and `PROXY_BEARER_TOKEN` in the tool's secret store.
-2. For distributed tools, store `RELAY_BASE_URL`, `RELAY_RESPONSES_URL`, and the plaintext `RELAY_PASSWORD` in the tool's secret store or operator-controlled runtime config.
+2. For distributed tools, store `RELAY_BASE_URL`, `RELAY_RESPONSES_URL`, and `RELAY_BEARER_TOKEN` in the tool's secret store or operator-controlled runtime config.
 3. Do not store `RELAY_PASSWORD_HASH` in the tool.
 
 ## Admin API responses you can rely on
@@ -316,7 +335,7 @@ Create tool:
 curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools" \
   -H "Content-Type: application/json" \
   -d '{
-    "slug":"storyworks-alt-text",
+    "slug":"<tool-slug>",
     "projectId":123,
     "mode":"server"
   }'
@@ -327,7 +346,7 @@ Response when `RELAY_PUBLIC_BASE_URL` is configured:
 ```json
 {
   "id": 456,
-  "relayResponsesUrl": "https://5z97x9cmtm.eu-west-2.awsapprunner.com/v1/tools/storyworks-alt-text/responses"
+  "relayResponsesUrl": "https://jcarmqwi6v.eu-west-2.awsapprunner.com/v1/tools/<tool-slug>/responses"
 }
 ```
 
@@ -343,7 +362,23 @@ Response:
 {
   "token": "tt.<id>.<secret>",
   "expiresAt": "2026-06-01T09:00:00.000Z",
-  "relayResponsesUrl": "https://5z97x9cmtm.eu-west-2.awsapprunner.com/v1/tools/storyworks-alt-text/responses"
+  "relayResponsesUrl": "https://jcarmqwi6v.eu-west-2.awsapprunner.com/v1/tools/<tool-slug>/responses"
+}
+```
+
+Mint relay token:
+
+```bash
+curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools/456/relay-tokens"
+```
+
+Response:
+
+```json
+{
+  "token": "rt.<id>.<secret>",
+  "expiresAt": "2026-06-01T09:00:00.000Z",
+  "relayResponsesUrl": "https://jcarmqwi6v.eu-west-2.awsapprunner.com/v1/tools/<tool-slug>/responses"
 }
 ```
 
@@ -351,45 +386,18 @@ Response:
 
 Authentication sequence for distributed clients:
 1. Obtain the tool-specific relay URL from admin.
-2. Log the user into the shared relay with `POST /v1/auth/login`.
-3. Read the returned `token`.
-4. Call the tool-specific relay URL with `Authorization: Bearer <token>`.
-
-If step 2 is missing, step 4 will fail every time.
-
-### Client login
-
-Users sign in once per day:
-
-```bash
-export RELAY_BASE_URL="https://5z97x9cmtm.eu-west-2.awsapprunner.com"
-export RELAY_PASSWORD="<shared-relay-password>"
-
-curl -s -X POST "$RELAY_BASE_URL/v1/auth/login" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email":"person@bbc.com",
-    "password":"'"$RELAY_PASSWORD"'"
-  }'
-```
-
-Success:
-
-```json
-{
-  "token": "st.<id>.<secret>",
-  "expiresAt": "2026-03-13T12:00:00.000Z"
-}
-```
+2. Mint the relay token with `POST /admin/tools/:toolId/relay-tokens`.
+3. Store that relay token in the distributed tool's runtime config.
+4. Call the tool-specific relay URL with `Authorization: Bearer <relay_token>`.
 
 ### Client generation call
 
 ```bash
-export RELAY_SESSION_TOKEN="st.<id>.<secret>"
-export RELAY_RESPONSES_URL="https://5z97x9cmtm.eu-west-2.awsapprunner.com/v1/tools/storyworks-alt-text/responses"
+export RELAY_BEARER_TOKEN="rt.<id>.<secret>"
+export RELAY_RESPONSES_URL="https://jcarmqwi6v.eu-west-2.awsapprunner.com/v1/tools/<tool-slug>/responses"
 
 curl -s -X POST "$RELAY_RESPONSES_URL" \
-  -H "Authorization: Bearer $RELAY_SESSION_TOKEN" \
+  -H "Authorization: Bearer $RELAY_BEARER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "model":"<responses_model>",
@@ -398,12 +406,12 @@ curl -s -X POST "$RELAY_RESPONSES_URL" \
 ```
 
 Rules:
-1. Do not put tool bearer tokens in distributed clients.
+1. Do not put proxy bearer tokens in distributed clients.
 2. Do not point distributed clients at `localhost` in production.
 3. The shared relay currently exposes only `POST /v1/tools/:toolSlug/responses`.
-4. Relay login accepts only email domains configured on `relay-api` via `RELAY_EMAIL_DOMAIN_ALLOWLIST`.
-5. A relay URL without a relay session token is expected to fail with `401 Missing or invalid bearer token`.
-6. Agents and client apps must treat relay login as a required dependency before any generation request, not as an optional setup step.
+4. A relay URL without a relay token is expected to fail with `401 Missing or invalid bearer token`.
+5. Relay tokens are relay-only credentials and do not work on `/proxy/*`.
+6. Legacy `POST /v1/auth/login` support is temporary compatibility only.
 
 ## Path B: Trusted server tools through the proxy
 
@@ -437,18 +445,11 @@ scripts/smoke-proxy.sh "$BASE_URL" "<tool_token>" "<responses_model>"
 Relay smoke:
 
 ```bash
-export RELAY_BASE_URL="https://5z97x9cmtm.eu-west-2.awsapprunner.com"
-export RELAY_PASSWORD="<shared-relay-password>"
-
-RELAY_SESSION_TOKEN="$(curl -s -X POST "$RELAY_BASE_URL/v1/auth/login" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email":"person@bbc.com",
-    "password":"'"$RELAY_PASSWORD"'"
-  }' | node -e 'const data=JSON.parse(require("fs").readFileSync(0,"utf8")); process.stdout.write(data.token || "");')"
+export RELAY_BASE_URL="https://jcarmqwi6v.eu-west-2.awsapprunner.com"
+export RELAY_BEARER_TOKEN="rt.<id>.<secret>"
 
 curl -s -X POST "$RELAY_BASE_URL/v1/tools/$TOOL_SLUG/responses" \
-  -H "Authorization: Bearer $RELAY_SESSION_TOKEN" \
+  -H "Authorization: Bearer $RELAY_BEARER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "model":"<responses_model>",
@@ -465,11 +466,15 @@ Server tool tokens:
 4. Revoke the old token.
 
 Relay shared password:
-1. Update `RELAY_PASSWORD_HASH` on the `relay-api` service.
+1. Legacy compatibility only: update `RELAY_PASSWORD_HASH` on the `relay-api` service.
 2. Deploy `relay-api`.
-3. Update every consuming tool's stored plaintext `RELAY_PASSWORD`.
-4. Verify `POST /v1/auth/login`.
-5. Communicate the new shared relay password to users when that tool relies on direct user entry.
+3. Verify `POST /v1/auth/login` only if older distributed tools still depend on it.
+
+Relay tokens:
+1. Mint new relay token.
+2. Update the distributed tool with the new token.
+3. Run relay smoke verification.
+4. Revoke the old relay token.
 
 ## Common runtime failures
 
@@ -480,8 +485,8 @@ Proxy:
 4. `429 rate_limit_exceeded`: project RPM cap reached.
 
 Relay:
-1. `401 Invalid relay credentials`: wrong relay password or non-allowed email domain.
-2. `401 Missing or invalid bearer token`: missing, invalid, or expired relay session.
+1. `401 Missing or invalid bearer token`: missing, invalid, revoked, or expired relay token.
+2. Legacy compatibility only: `401 Invalid relay credentials`: wrong relay password or non-allowed email domain.
 3. `404 Tool not found`: slug does not match a tool.
 4. `403 Tool is inactive`: tool exists but is disabled.
 5. `403 Project is inactive`: project exists but is disabled.
@@ -492,8 +497,8 @@ Complete only when all are true:
 1. Project exists with the expected slug and environment.
 2. Active OpenAI key is set for the project.
 3. Tool exists with the expected slug.
-4. Distributed clients use the derived relay URL, not a tool token.
+4. Distributed clients use the derived relay URL plus a relay token.
 5. Trusted server tools store the tool token in server-side secrets only.
-6. Distributed-client tools store the plaintext `RELAY_PASSWORD`, not `RELAY_PASSWORD_HASH`.
+6. Distributed-client tools store `RELAY_BEARER_TOKEN`, not `RELAY_PASSWORD_HASH`.
 7. Proxy smoke passes for any server tool path.
-8. Relay login and relay responses smoke pass for any distributed-client path.
+8. Relay responses smoke passes for any distributed-client path.
