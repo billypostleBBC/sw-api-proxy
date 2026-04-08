@@ -24,16 +24,16 @@ Use these when you need a narrower operational guide:
 5. Production runtime may store `ADMIN_PASSWORD_HASH`, but operators still sign in with the plaintext shared password.
 
 ```bash
-export BASE_URL="https://nnm7du2h7j.eu-west-2.awsapprunner.com"
+export BASE_URL="https://2rv5622zbp.eu-west-2.awsapprunner.com"
 export ADMIN_URL="$BASE_URL/admin"
 export PROXY_BASE_URL="$BASE_URL/proxy/v1"
-export RELAY_BASE_URL="https://relay.example.com"
+export RELAY_BASE_URL="https://jcarmqwi6v.eu-west-2.awsapprunner.com"
 export ADMIN_EMAIL="admin1@bbc.co.uk"
 export ADMIN_PASSWORD="<shared-admin-password>"
 export COOKIE_JAR="${TMPDIR:-/tmp}/proxy-api-admin.cookie"
 ```
 
-Current hosted admin dashboard: `https://nnm7du2h7j.eu-west-2.awsapprunner.com/admin`
+Current hosted admin dashboard: `https://2rv5622zbp.eu-west-2.awsapprunner.com/admin`
 
 ## Fastest Manual Path: Browser Admin To Smoke Test
 
@@ -138,7 +138,7 @@ curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools" \
 Response when the shared relay URL is configured on the proxy service:
 
 ```json
-{"id":456,"relayResponsesUrl":"https://relay.example.com/v1/tools/storyworks-ai-assistant/responses"}
+{"id":456,"relayResponsesUrl":"https://jcarmqwi6v.eu-west-2.awsapprunner.com/v1/tools/storyworks-ai-assistant/responses"}
 ```
 
 If the tool already exists, look it up via the admin API:
@@ -162,7 +162,7 @@ curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools/$TOOL_ID/relay-tokens"
 Response includes a relay-scoped token and expiry:
 
 ```json
-{"token":"rt.<id>.<secret>","expiresAt":"2026-05-01T10:00:00.000Z","relayResponsesUrl":"https://relay.example.com/v1/tools/storyworks-ai-assistant/responses"}
+{"token":"rt.<id>.<secret>","expiresAt":"2026-05-01T10:00:00.000Z","relayResponsesUrl":"https://jcarmqwi6v.eu-west-2.awsapprunner.com/v1/tools/storyworks-ai-assistant/responses"}
 ```
 
 Call the tool-specific relay URL returned by admin:

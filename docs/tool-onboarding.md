@@ -29,7 +29,7 @@ Do not use the direct proxy path for plugins, browser apps, or desktop apps you 
 These values are needed only while creating or updating the project/tool in admin:
 
 ```bash
-export BASE_URL="https://nnm7du2h7j.eu-west-2.awsapprunner.com"
+export BASE_URL="https://2rv5622zbp.eu-west-2.awsapprunner.com"
 export ADMIN_URL="$BASE_URL/admin"
 export PROXY_BASE_URL="$BASE_URL/proxy/v1"
 export ADMIN_EMAIL="<your-allowlisted-admin-email>"
@@ -103,6 +103,26 @@ Reason:
 2. Distributed clients now authenticate with relay tokens, not shared relay passwords.
 3. The proxy and relay store only token hashes server-side so callers do not need deployment secrets.
 
+## Agent migration checklist for distributed tools
+
+Use this when moving an existing plugin, desktop app, browser app, or agent host from any older auth path to relay tokens.
+
+1. Remove any raw OpenAI key dependency from the shipped runtime.
+2. Remove any proxy tool token (`tt...`) from the shipped runtime.
+3. Stop using legacy relay login (`POST /v1/auth/login`) for new migrations.
+4. Mint a relay token for the tool from admin.
+5. Store exactly these runtime values in the consuming tool's secret store or operator-controlled config:
+   - `RELAY_BASE_URL`
+   - `RELAY_RESPONSES_URL`
+   - `RELAY_BEARER_TOKEN`
+6. Send `Authorization: Bearer $RELAY_BEARER_TOKEN` on every `POST $RELAY_RESPONSES_URL`.
+7. Keep model selection in the consuming tool. The relay does not pick a model for you.
+8. Run a live smoke test with the real tool slug before revoking any old credentials.
+9. Revoke only the superseded relay token, proxy token, or legacy credential after the new path passes.
+
+Agent implementation rule:
+1. If the runtime is distributed, the only supported steady-state auth primitive is a relay token plus the tool-specific relay URL.
+
 ## Where each runtime value comes from
 
 Agents should treat this list as the source-of-truth mapping.
@@ -110,7 +130,7 @@ Agents should treat this list as the source-of-truth mapping.
 1. `PROXY_BASE_URL`
    Source: derive from `BASE_URL` as `$BASE_URL/proxy/v1`.
 2. `RELAY_BASE_URL`
-   Source: environment-level relay host, currently `https://5z97x9cmtm.eu-west-2.awsapprunner.com` in production.
+   Source: environment-level relay host, currently `https://jcarmqwi6v.eu-west-2.awsapprunner.com` in production.
 3. `RELAY_RESPONSES_URL`
    Source: returned by `POST /admin/tools` and `POST /admin/tools/:toolId/relay-tokens`, or shown in the admin dashboard tools table.
    Fallback: derive as `$RELAY_BASE_URL/v1/tools/$TOOL_SLUG/responses` when the relay base and slug are known.
@@ -133,6 +153,10 @@ This repo manages `proxy-api` and `relay-api`. It does not manage the secret nam
 
 For any new tool, store tool-side runtime values in that tool's own secret store, then fetch them at startup or deploy time. If the tool runs on AWS, use SSM Parameter Store or Secrets Manager under the tool's own namespace.
 
+Do not create or maintain tool-specific onboarding runbooks in this repo.
+1. Tool-specific archived runbooks go stale and reintroduce old auth patterns.
+2. Extend this generic runbook when requirements change instead.
+
 Recommended tool-side names:
 1. `PROXY_BASE_URL`
 2. `PROXY_BEARER_TOKEN`
@@ -143,7 +167,7 @@ Recommended tool-side names:
 Example AWS SSM fetch pattern for a server tool:
 
 ```bash
-export TOOL_SECRET_PREFIX="/storyworks-alt-text"
+export TOOL_SECRET_PREFIX="/<tool-slug>"
 
 export PROXY_BASE_URL="$(aws ssm get-parameter \
   --name "$TOOL_SECRET_PREFIX/PROXY_BASE_URL" \
@@ -160,7 +184,7 @@ export PROXY_BEARER_TOKEN="$(aws ssm get-parameter \
 Example AWS SSM fetch pattern for a distributed client backend or agent host:
 
 ```bash
-export TOOL_SECRET_PREFIX="/storyworks-alt-text"
+export TOOL_SECRET_PREFIX="/<tool-slug>"
 
 export RELAY_BASE_URL="$(aws ssm get-parameter \
   --name "$TOOL_SECRET_PREFIX/RELAY_BASE_URL" \
@@ -190,8 +214,8 @@ Do not fetch these App Runner deployment parameters into a tool:
 The shared relay is already deployed in production.
 
 Use these production roots:
-1. Proxy/admin root: `https://nnm7du2h7j.eu-west-2.awsapprunner.com`
-2. Relay root: `https://5z97x9cmtm.eu-west-2.awsapprunner.com`
+1. Proxy/admin root: `https://2rv5622zbp.eu-west-2.awsapprunner.com`
+2. Relay root: `https://jcarmqwi6v.eu-west-2.awsapprunner.com`
 
 For new production tools:
 1. Do not deploy another relay service.
@@ -199,7 +223,7 @@ For new production tools:
 3. Use the derived relay URL from the admin response or dashboard.
 4. Treat that relay URL as a protected route, not as access by itself.
 5. Mint a relay token for the tool and send it as bearer auth to that relay URL.
-6. The derived URL format is `https://5z97x9cmtm.eu-west-2.awsapprunner.com/v1/tools/<tool-slug>/responses`.
+6. The derived URL format is `https://jcarmqwi6v.eu-west-2.awsapprunner.com/v1/tools/<tool-slug>/responses`.
 
 ## Relay URL authentication dependency
 
@@ -311,7 +335,7 @@ Create tool:
 curl -s -b "$COOKIE_JAR" -X POST "$BASE_URL/admin/tools" \
   -H "Content-Type: application/json" \
   -d '{
-    "slug":"storyworks-alt-text",
+    "slug":"<tool-slug>",
     "projectId":123,
     "mode":"server"
   }'
@@ -322,7 +346,7 @@ Response when `RELAY_PUBLIC_BASE_URL` is configured:
 ```json
 {
   "id": 456,
-  "relayResponsesUrl": "https://5z97x9cmtm.eu-west-2.awsapprunner.com/v1/tools/storyworks-alt-text/responses"
+  "relayResponsesUrl": "https://jcarmqwi6v.eu-west-2.awsapprunner.com/v1/tools/<tool-slug>/responses"
 }
 ```
 
@@ -338,7 +362,7 @@ Response:
 {
   "token": "tt.<id>.<secret>",
   "expiresAt": "2026-06-01T09:00:00.000Z",
-  "relayResponsesUrl": "https://5z97x9cmtm.eu-west-2.awsapprunner.com/v1/tools/storyworks-alt-text/responses"
+  "relayResponsesUrl": "https://jcarmqwi6v.eu-west-2.awsapprunner.com/v1/tools/<tool-slug>/responses"
 }
 ```
 
@@ -354,7 +378,7 @@ Response:
 {
   "token": "rt.<id>.<secret>",
   "expiresAt": "2026-06-01T09:00:00.000Z",
-  "relayResponsesUrl": "https://5z97x9cmtm.eu-west-2.awsapprunner.com/v1/tools/storyworks-alt-text/responses"
+  "relayResponsesUrl": "https://jcarmqwi6v.eu-west-2.awsapprunner.com/v1/tools/<tool-slug>/responses"
 }
 ```
 
@@ -370,7 +394,7 @@ Authentication sequence for distributed clients:
 
 ```bash
 export RELAY_BEARER_TOKEN="rt.<id>.<secret>"
-export RELAY_RESPONSES_URL="https://5z97x9cmtm.eu-west-2.awsapprunner.com/v1/tools/storyworks-alt-text/responses"
+export RELAY_RESPONSES_URL="https://jcarmqwi6v.eu-west-2.awsapprunner.com/v1/tools/<tool-slug>/responses"
 
 curl -s -X POST "$RELAY_RESPONSES_URL" \
   -H "Authorization: Bearer $RELAY_BEARER_TOKEN" \
@@ -421,7 +445,7 @@ scripts/smoke-proxy.sh "$BASE_URL" "<tool_token>" "<responses_model>"
 Relay smoke:
 
 ```bash
-export RELAY_BASE_URL="https://5z97x9cmtm.eu-west-2.awsapprunner.com"
+export RELAY_BASE_URL="https://jcarmqwi6v.eu-west-2.awsapprunner.com"
 export RELAY_BEARER_TOKEN="rt.<id>.<secret>"
 
 curl -s -X POST "$RELAY_BASE_URL/v1/tools/$TOOL_SLUG/responses" \

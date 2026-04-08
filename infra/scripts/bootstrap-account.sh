@@ -922,6 +922,7 @@ main() {
   local database_password
   local database_host
   local database_url
+  local database_url_base
   local existing_database_url
   local kms_key_arn
   local access_role_arn
@@ -986,7 +987,8 @@ main() {
     else
       require_value "DATABASE_PASSWORD when the DB already exists and /proxy-api/DATABASE_URL is missing" "$DATABASE_PASSWORD"
       database_host="$(db_endpoint)"
-      database_url="postgres://${DB_USERNAME}:${DATABASE_PASSWORD}@${database_host}:5432/${DB_NAME}"
+      database_url_base="postgres://${DB_USERNAME}:${DATABASE_PASSWORD}@${database_host}:5432/${DB_NAME}"
+      database_url="${database_url_base}?sslmode=no-verify"
     fi
   else
     database_password="${DATABASE_PASSWORD:-$(random_password)}"
@@ -996,7 +998,8 @@ main() {
   ensure_db_instance "$db_subnet_group_name" "$db_security_group_id" "$database_password"
   database_host="$(db_endpoint)"
   if [[ -z "$database_url" ]]; then
-    database_url="postgres://${DB_USERNAME}:${database_password}@${database_host}:5432/${DB_NAME}"
+    database_url_base="postgres://${DB_USERNAME}:${database_password}@${database_host}:5432/${DB_NAME}"
+    database_url="${database_url_base}?sslmode=no-verify"
   fi
 
   kms_key_arn="$(ensure_kms_key "$KMS_ALIAS_NAME")"
